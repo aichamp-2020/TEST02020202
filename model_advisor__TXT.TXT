@@ -1,0 +1,1226 @@
+#!/usr/bin/env python3
+"""
+Model Advisor — pick the right LLM for an insurance (or general) use case.
+
+Companion tool to "Cross-Vendor Model Comparison, Insurance Use Cases &
+Recommendations". Same model database and scoring logic as that deck,
+wrapped in a simple chat interface so you can type a use case in plain
+English and get a ranked recommendation with reasoning.
+
+Usage:
+    python model_advisor.py                  # interactive chat mode
+    python model_advisor.py "FNOL triage"     # one-shot mode, single query
+    python model_advisor.py --list            # show all known use cases
+    python model_advisor.py --models          # show the full model table
+
+No external dependencies — standard library only.
+"""
+
+from __future__ import annotations
+import sys
+import textwrap
+import argparse
+from dataclasses import dataclass, field
+from typing import Optional
+
+
+# ============================================================
+# MODEL DATABASE
+# Same 13 models and figures used in the cross-vendor comparison deck.
+# Pricing per 1M tokens (USD). Context in tokens. Intelligence Index
+# from Artificial Analysis where independently measured; otherwise None.
+# Source: vendor API pricing pages + Artificial Analysis, accessed Jun 2026.
+# ============================================================
+
+@dataclass
+class Model:
+    name: str
+    vendor: str
+    input_price: float       # $ per 1M input tokens
+    output_price: float      # $ per 1M output tokens
+    cache_hit_price: Optional[float]  # $ per 1M cached input tokens, if published
+    context: int              # max context window, tokens
+    intelligence: Optional[int]    # Artificial Analysis Intelligence Index, or None
+    speed: int                 # approx output tokens/sec
+    ttft: float                # approx time-to-first-token, seconds
+    knowledge_cutoff: str       # human-readable reliable knowledge cutoff
+    release_date: str           # human-readable release date
+    eval_cost: Optional[float]  # $ to run full Artificial Analysis Intelligence Index suite, if published
+    reasoning: bool            # is this a reasoning-tuned model
+    vision: bool               # native multimodal / vision input support
+    open_weight: bool          # open weights available
+    ocr_accuracy: Optional[float] = None   # measured doc/OCR accuracy %, if known
+    audio_input: bool = False    # native audio understanding (not just transcription bolted on)
+    video_input: bool = False    # native video understanding (frame/clip analysis)
+    image_gen: bool = False      # vendor offers native/sibling image generation in the same ecosystem
+    notes: str = ""             # one-line vendor-level positioning note
+
+    def blended_price(self, cache_ratio=0.7, in_ratio=0.2, out_ratio=0.1) -> float:
+        """
+        Blended $/M tokens using Artificial Analysis's standard 7:2:1
+        cache-hit:input:output weighting, which approximates a typical
+        production traffic mix (most tokens are repeated context).
+        Falls back to input price for the cache-hit share if no
+        published cache price exists.
+        """
+        cache = self.cache_hit_price if self.cache_hit_price is not None else self.input_price
+        return cache * cache_ratio + self.input_price * in_ratio + self.output_price * out_ratio
+
+    def justify(self, param: str) -> str:
+        """Return a short justification for one parameter value, used by
+        the --explain flag and the reference report."""
+        j = JUSTIFICATIONS.get((self.name, param))
+        if j:
+            return j
+        return PARAM_FALLBACK_JUSTIFICATIONS.get(param, "No specific justification on file for this parameter.")
+
+
+# ============================================================
+# PARAMETER JUSTIFICATIONS
+# One entry per (model, parameter) where a specific reason is known;
+# PARAM_FALLBACK_JUSTIFICATIONS covers the general "why this parameter
+# matters" framing used when no model-specific note exists.
+# All figures sourced from vendor API pricing/docs and Artificial
+# Analysis Intelligence Index v4.1, accessed Jun 2026, unless noted.
+# ============================================================
+
+PARAM_FALLBACK_JUSTIFICATIONS = {
+    "intelligence": "Composite score across reasoning, knowledge, math, and coding "
+                     "(Artificial Analysis Intelligence Index v4.1, 9 evals incl. GPQA "
+                     "Diamond, Humanity's Last Exam, SciCode, AA-LCR). Use as a relative "
+                     "ranking signal, not an absolute capability guarantee for your task.",
+    "speed": "Output tokens/sec once generation has started. Matters for long responses "
+              "and streaming UX; largely irrelevant for short, latency-insensitive batch jobs.",
+    "ttft": "Time-to-first-token: how long before any output appears. This is what users "
+            "actually feel as 'slow' in a chat UI, distinct from total throughput.",
+    "input_price": "Cost per 1M input tokens. Dominates total spend for long-context, "
+                    "document-heavy, or RAG-style workloads where input >> output.",
+    "output_price": "Cost per 1M output tokens, typically 4-8x the input price across "
+                     "vendors. Dominates total spend for generation-heavy workloads "
+                     "(long-form drafting, code generation, reasoning traces).",
+    "blended_price": "Weighted 7:2:1 cache-hit:input:output blend (Artificial Analysis "
+                      "convention), approximating realistic production traffic where most "
+                      "tokens are repeated system prompts/context rather than fresh input.",
+    "cache_hit_price": "Cost for tokens served from a prompt cache instead of reprocessed "
+                        "fresh. Matters enormously for high-volume apps with a stable system "
+                        "prompt or repeated document context; some vendors discount this 90%+.",
+    "context": "Maximum combined input+output tokens in one request. A hard filter for "
+                "any task involving long documents, treaties, or full claim packets that "
+                "don't fit in a smaller window — no amount of prompt engineering fixes this.",
+    "knowledge_cutoff": "Date through which the model's training data is most reliable. "
+                         "Matters for any question about recent events, current regulations, "
+                         "or anything that changed after this date — the model will not know.",
+    "release_date": "When the model became generally available. Newer isn't automatically "
+                     "better for your task, but it indicates how battle-tested the model is "
+                     "in production and how soon it's likely to be deprecated.",
+    "eval_cost": "Dollar cost to run the full Artificial Analysis Intelligence Index suite "
+                  "once. A rough proxy for what the model costs on heavy reasoning workloads "
+                  "in production, not just its per-token list price.",
+    "open_weight": "Whether model weights can be downloaded and self-hosted. Required for "
+                    "strict data-residency rules, air-gapped environments, or avoiding "
+                    "per-token vendor billing at extreme volume.",
+    "vision": "Native multimodal input support (images/PDFs). A hard requirement for OCR, "
+               "scanned-document, or imagery-based use cases — text-only models can't help here.",
+    "audio_input": "Native audio understanding — the model directly processes sound (tone, "
+                    "speaker changes, non-speech audio), not just a bolted-on transcription step. "
+                    "Most vendors here do not offer this on their core text/reasoning model.",
+    "video_input": "Native video understanding — the model processes video frames/motion "
+                    "directly in one call, rather than requiring you to pre-extract and caption "
+                    "frames yourself. A hard requirement for video-based inspection or analysis use cases.",
+    "image_gen": "Whether the vendor offers image generation in the same ecosystem (often a "
+                  "separate sibling model, not the chat/reasoning model itself). Relevant for "
+                  "marketing or document-mockup use cases, not a substitute for vision *input*.",
+}
+
+JUSTIFICATIONS: dict[tuple[str, str], str] = {
+    # ---- Claude (Anthropic) ----
+    ("Claude Haiku 4.5", "intelligence"):
+        "30 on Artificial Analysis Intelligence Index — modest by design; Anthropic "
+        "positions Haiku as 'near-frontier' for its tier, optimized for volume over depth.",
+    ("Claude Haiku 4.5", "knowledge_cutoff"):
+        "February 2025 — the oldest cutoff in the current Claude lineup, since Haiku 4.5 "
+        "predates Sonnet 4.6 and Opus 4.7/4.8 by several months.",
+    ("Claude Haiku 4.5", "release_date"):
+        "Generally available October 15, 2025 — roughly four months before the Sonnet/Opus "
+        "4.6 generation, making it the most battle-tested model in the current lineup.",
+    ("Claude Sonnet 4.6", "intelligence"):
+        "42 on Artificial Analysis Intelligence Index — independent trackers report Sonnet "
+        "4.6 matching ~98% of Opus-tier coding/computer-use performance at 40% lower cost.",
+    ("Claude Sonnet 4.6", "context"):
+        "1M-token context window in beta, matching Opus tier as of the 4.6 generation — "
+        "the long-context premium that used to justify paying for Opus is gone for this axis.",
+    ("Claude Sonnet 4.6", "knowledge_cutoff"):
+        "August 2025 — newer than Haiku 4.5 (Feb 2025), older than Opus 4.7/4.8 (Jan 2026).",
+    ("Claude Sonnet 4.6", "release_date"):
+        "Generally available February 17, 2026, about two weeks after Opus 4.6.",
+    ("Claude Sonnet 4.6", "ocr_accuracy"):
+        "95.2% measured document/OCR accuracy in independent six-task vision benchmarking — "
+        "the highest of any model tracked here, justifying its premium for document-heavy work.",
+    ("Claude Opus 4.7", "intelligence"):
+        "54 on Artificial Analysis Intelligence Index, well above the 29-model average; "
+        "Anthropic's most capable generally-available model at time of evaluation.",
+    ("Claude Opus 4.7", "speed"):
+        "~50 output tokens/sec — notably slow for its price tier per Artificial Analysis; "
+        "Opus trades raw throughput for reasoning depth, so pair with async workflows.",
+    ("Claude Opus 4.7", "ttft"):
+        "~13.3s average time-to-first-token at max effort — the tradeoff for top-tier "
+        "reasoning; not a fit for real-time chat without a lower-effort setting.",
+    ("Claude Opus 4.7", "knowledge_cutoff"):
+        "January 2026 — the most recent cutoff in the Claude lineup at evaluation time.",
+    ("Claude Opus 4.7", "release_date"):
+        "Released April 16, 2026. Note: Anthropic has since shipped Opus 4.8 as the current "
+        "flagship (same $5/$25 pricing); 4.7 remains documented but is no longer the newest tier.",
+    ("Claude Opus 4.7", "eval_cost"):
+        "$3,737.82 to run the full Intelligence Index suite — the most expensive eval run "
+        "among Claude models, reflecting both price and Opus's verbose reasoning traces.",
+
+    # ---- GPT (OpenAI) ----
+    ("GPT-5.4 mini", "intelligence"):
+        "40 on Artificial Analysis Intelligence Index, above the ~29 all-model average — "
+        "outperforms the prior-generation GPT-5 mini (33) at the same price point.",
+    ("GPT-5.4", "intelligence"):
+        "51 on Artificial Analysis Intelligence Index. OpenAI's own GDPval figure (83%) "
+        "uses a different methodology; treat the two scores as non-comparable.",
+    ("GPT-5.4", "context"):
+        "1.1M-token context window, the largest in the GPT-5.4 family, shared with GPT-5.5.",
+    ("GPT-5.4", "speed"):
+        "166 output tokens/sec at default effort — among the fastest models in its "
+        "Intelligence-Index bracket, per Artificial Analysis.",
+    ("GPT-5.4", "knowledge_cutoff"):
+        "August 31, 2025, per OpenAI/Artificial Analysis documentation.",
+    ("GPT-5.4", "release_date"):
+        "Released March 5, 2026 as OpenAI's frontier model for complex professional work.",
+    ("GPT-5.4", "eval_cost"):
+        "$2,131.77 to run the Intelligence Index suite at xhigh effort — reasoning effort "
+        "level materially changes both score and cost; this figure is for the xhigh config.",
+    ("GPT-5.4", "ocr_accuracy"):
+        "91.8% measured document/OCR accuracy — strong, but behind Claude Sonnet 4.6 (95.2%) "
+        "on the same independent six-task benchmark.",
+    ("GPT-5.5", "intelligence"):
+        "55 on Artificial Analysis Intelligence Index — OpenAI's strongest agentic coding "
+        "model to date, improving on GPT-5.4 while using fewer tokens per task.",
+    ("GPT-5.5", "speed"):
+        "~79 output tokens/sec — OpenAI states 5.5 matches 5.4's real-world per-token "
+        "latency despite higher intelligence, though raw throughput differs by reasoning effort.",
+    ("GPT-5.5", "knowledge_cutoff"):
+        "December 1, 2025 per OpenAI/LLM-Stats documentation. Note: some users have reported "
+        "the model self-reporting an inconsistent (much older) cutoff when asked directly — "
+        "model self-reports of training data are known to be unreliable; the documented spec "
+        "is the source of record here, not the model's own claim.",
+    ("GPT-5.5", "release_date"):
+        "Released April 23, 2026.",
+    ("GPT-5.5", "output_price"):
+        "$30/M output — the highest output price tracked here; OpenAI frames this as "
+        "justified by materially higher coding/agentic benchmark scores and token efficiency.",
+
+    # ---- Gemini (Google) ----
+    ("Gemini 3.1 Flash-Lite", "intelligence"):
+        "25 on Artificial Analysis Intelligence Index — above its own price-tier average "
+        "(16), an unusually strong score for the cheapest model in the lineup.",
+    ("Gemini 3.1 Flash-Lite", "speed"):
+        "359 output tokens/sec — the fastest model in this entire comparison set by a wide "
+        "margin, ~2.5x faster time-to-first-token than its Gemini 2.5 Flash predecessor.",
+    ("Gemini 3.1 Flash-Lite", "ttft"):
+        "~0.5s — Google specifically engineered this for high-frequency, low-latency "
+        "production workflows like classification and real-time chat.",
+    ("Gemini 3.1 Flash-Lite", "knowledge_cutoff"):
+        "January 2025, shared across the Gemini 3 model family at evaluation time.",
+    ("Gemini 3.1 Flash-Lite", "release_date"):
+        "Released March 4, 2026; the preview API endpoint is scheduled for discontinuation "
+        "July 9, 2026 in favor of the stable gemini-3.1-flash-lite endpoint.",
+    ("Gemini 3.1 Flash-Lite", "eval_cost"):
+        "$93.72 to run the Intelligence Index suite — the cheapest eval run in this table, "
+        "reflecting both low per-token price and notably concise (low-token) responses.",
+    ("Gemini 3.1 Flash-Lite", "audio_input"):
+        "Native audio understanding, inherited from the Gemini 3 family architecture — "
+        "unusual for a budget tier; most vendors only put multimodal input on flagship models.",
+    ("Gemini 3.1 Flash-Lite", "video_input"):
+        "Native video understanding at the budget tier — a genuine differentiator versus "
+        "every other low-cost model tracked, which are text/image-only.",
+    ("Gemini 3.1 Pro", "intelligence"):
+        "46 on Artificial Analysis Intelligence Index, well above the ~29 average.",
+    ("Gemini 3.1 Pro", "context"):
+        "2M-token context window — the largest proprietary (non-open-weight) context "
+        "window tracked here, ahead of Claude and GPT's 1\u20131.1M windows.",
+    ("Gemini 3.1 Pro", "eval_cost"):
+        "$815.11 to run the Intelligence Index suite — mid-pack cost, reflecting Google's "
+        "relatively concise output token usage (56M tokens vs. ~88M average) on the suite.",
+    ("Gemini 3.1 Pro", "knowledge_cutoff"):
+        "January 2025, shared across the Gemini 3 model family.",
+    ("Gemini 3.1 Pro", "release_date"):
+        "Entered preview in the Gemini 3 family rollout, March 2026.",
+    ("Gemini 3.1 Pro", "audio_input"):
+        "Native audio understanding — up to ~8.4 hours of continuous audio in a single "
+        "prompt per Google's documentation, not a bolted-on transcription step.",
+    ("Gemini 3.1 Pro", "video_input"):
+        "Native video understanding — up to ~1 hour of video in a single prompt. This, "
+        "combined with audio, makes Gemini 3.1 Pro the only model in this table that "
+        "natively understands both in the base chat model.",
+    ("Gemini 3.1 Pro", "image_gen"):
+        "Image generation/editing is available via a sibling model in the same family "
+        "(Gemini 3 Pro Image, branded 'Nano Banana Pro'), not natively inside the Gemini "
+        "3.1 Pro chat model itself \u2014 still a same-vendor, same-API-surface capability.",
+
+    # ---- Llama (Meta) ----
+    ("Llama 4 Scout", "intelligence"):
+        "14 on Artificial Analysis Intelligence Index — modest in absolute terms, but above "
+        "the 13-point average for open-weight models of similar size; Scout trades peak "
+        "intelligence for an unmatched context window.",
+    ("Llama 4 Scout", "context"):
+        "10M-token advertised context window, the largest of any model tracked here by a "
+        "wide margin. Caveat: independent RULER benchmarking finds models reliably use only "
+        "50-65% of advertised context, so Scout's effective limit is closer to 5-6.5M tokens "
+        "in practice — test with your real document sizes before relying on the full figure.",
+    ("Llama 4 Scout", "knowledge_cutoff"):
+        "August 2024 per Artificial Analysis — the oldest cutoff of any model in this table, "
+        "a real limitation for tasks needing awareness of anything from the last 18+ months.",
+    ("Llama 4 Scout", "release_date"):
+        "Released April 5, 2026 alongside Llama 4 Maverick, as Meta's first natively "
+        "multimodal, mixture-of-experts Llama generation.",
+    ("Llama 4 Scout", "eval_cost"):
+        "$26.42 to run the Intelligence Index suite — among the cheapest eval runs tracked, "
+        "consistent with its low per-token price.",
+    ("Llama 4 Scout", "open_weight"):
+        "Downloadable from llama.com and Hugging Face under Meta's Llama 4 license; fits on "
+        "a single H100 GPU at 17B active parameters (109B total, 16 experts).",
+    ("Llama 4 Scout", "video_input"):
+        "Native video input via Meta's early-fusion multimodal architecture. Unlike "
+        "Maverick, Scout does not take native audio input.",
+    ("Llama 4 Scout", "audio_input"):
+        "No native audio input \u2014 this is Maverick's differentiator, not Scout's. "
+        "Scout handles text, image, and video only.",
+    ("Llama 4 Maverick", "intelligence"):
+        "Independently measured at 14 on Artificial Analysis Intelligence Index in the same "
+        "evaluation wave as Scout — both scored lower on multiple-choice evals than Meta's "
+        "own claimed figures, reportedly because the models inconsistently followed the "
+        "requested answer-formatting instructions. Treat vendor-reported scores with caution.",
+    ("Llama 4 Maverick", "context"):
+        "1M-token context window — well ahead of most proprietary mid-tier models on a free, "
+        "self-hostable model, at 17B active / 400B total parameters across 128 experts.",
+    ("Llama 4 Maverick", "input_price"):
+        "Median tracked price ~$0.27/M input across providers — over 10x cheaper than "
+        "OpenAI's then-leading GPT-4o endpoint at the time Maverick launched.",
+    ("Llama 4 Maverick", "release_date"):
+        "Released April 5, 2026, alongside Scout.",
+    ("Llama 4 Maverick", "audio_input"):
+        "Native audio input, unlike Scout \u2014 Maverick is the broader-multimodal sibling "
+        "in the Llama 4 pair, taking image, audio, and video alongside text.",
+
+    # ---- DeepSeek ----
+    ("DeepSeek V3.2", "intelligence"):
+        "Approximately 21-25 on Artificial Analysis Intelligence Index depending on exact "
+        "variant/date evaluated (reasoning vs. non-reasoning configurations score "
+        "differently) — above the open-weight non-reasoning average for its size class.",
+    ("DeepSeek V3.2", "open_weight"):
+        "MIT-licensed since March 2025 across the V3 line, including V3.2 — among the most "
+        "permissive licenses of any frontier-class open-weight model.",
+    ("DeepSeek V3.2", "release_date"):
+        "DeepSeek V3.2 (and the V3.2 Speciale variant) released in the same wave as Mistral "
+        "Large 3, early December 2025.",
+    ("DeepSeek R1", "intelligence"):
+        "40 on Artificial Analysis Intelligence Index in the configuration tracked here — "
+        "reasoning-tuned, and historically positioned as matching o1-class reasoning quality "
+        "at a small fraction of the price.",
+    ("DeepSeek R1", "output_price"):
+        "$2.19/M output — roughly 1/27th the cost of OpenAI's o1 at comparable reasoning "
+        "quality at the time of R1's original release, which drove much of its market attention.",
+    ("DeepSeek R1", "context"):
+        "64K-token context window — the smallest in this comparison set; a hard constraint "
+        "for any long-document use case regardless of R1's reasoning strength elsewhere.",
+
+    # ---- Mistral ----
+    ("Mistral Large 3", "context"):
+        "256K-token context window — Mistral's headline upgrade for this release, aimed "
+        "squarely at large log analysis, research synthesis, and document review.",
+    ("Mistral Large 3", "open_weight"):
+        "Released under Apache 2.0, one of the most permissive licenses available, suited to "
+        "EU/GDPR-sensitive self-hosted deployments.",
+    ("Mistral Large 3", "release_date"):
+        "Released in the same window as DeepSeek V3.2 Speciale, early December 2025.",
+    ("Mistral Large 3", "intelligence"):
+        "Scored in the low-30s on Artificial Analysis Intelligence Index in head-to-head "
+        "comparisons against DeepSeek V3.2 — competitive with, but not class-leading "
+        "against, similarly-priced open-weight non-reasoning models.",
+
+    # ---- Microsoft Phi ----
+    ("Phi-4", "intelligence"):
+        "5 on Artificial Analysis Intelligence Index — the lowest score in this entire "
+        "table. Phi-4 is a 14B-parameter small language model, not a frontier competitor; "
+        "it is included as a reference point for the 'tiny, self-hosted, narrow-task' tier.",
+    ("Phi-4", "context"):
+        "16K-token context window — by far the smallest tracked here, a hard constraint "
+        "ruling it out for almost any document-heavy or long-conversation use case.",
+    ("Phi-4", "speed"):
+        "~35 tokens/sec — notably slow for its size class despite being only 14B parameters, "
+        "per Artificial Analysis's measurement of Microsoft's first-party API.",
+    ("Phi-4", "knowledge_cutoff"):
+        "June 2024 — one of the oldest cutoffs in this table alongside Llama 4.",
+    ("Phi-4", "release_date"):
+        "Released January 10, 2025 (technical report published December 2024).",
+    ("Phi-4", "open_weight"):
+        "MIT-licensed, downloadable from Hugging Face; runs on modest hardware given its "
+        "14B parameter count, which is the model's core value proposition.",
+
+    # ---- Cohere ----
+    ("Command A", "intelligence"):
+        "8 on Artificial Analysis Intelligence Index — modest, but above the median (7) "
+        "for open-weight non-reasoning models of similar size; Cohere optimizes Command A "
+        "for enterprise RAG and tool-use rather than raw benchmark intelligence.",
+    ("Command A", "context"):
+        "256K-token context window tuned specifically for long-document RAG, Cohere's "
+        "core enterprise use case.",
+    ("Command A", "speed"):
+        "~68 tokens/sec, below the ~86 t/s median for its size class — Cohere trades some "
+        "throughput for the 150% throughput gain it already achieved over Command R+ 08-2024.",
+    ("Command A", "knowledge_cutoff"):
+        "June 1, 2024, per Cohere's own documentation.",
+    ("Command A", "release_date"):
+        "Released 2025 as Cohere's flagship at the time; positioned as 'a modern R+ on the "
+        "same rate card' — same $2.50/$10 pricing as the prior Command R+ 08-2024 release.",
+    ("Command A", "open_weight"):
+        "Open weights at 111B parameters, requiring two GPUs (A100s/H100s) to run \u2014 "
+        "self-hostable but not lightweight.",
+    ("Command A+", "intelligence"):
+        "37 on Artificial Analysis Intelligence Index — Cohere's first reasoning-capable "
+        "model, a substantial jump over Command A (8) and the highest-scoring Cohere model tracked.",
+    ("Command A+", "context"):
+        "200K-token context window; Cohere also publishes a 256K figure for the same model "
+        "family depending on deployment — treat the smaller figure as the conservative spec.",
+    ("Command A+", "speed"):
+        "~201 tokens/sec, well above Command A — driven by Command A+'s MoE architecture "
+        "(218B total / 25B active parameters) and W4A4 quantization.",
+    ("Command A+", "ttft"):
+        "~0.35s — one of the fastest time-to-first-token figures in this entire table, "
+        "among the lowest Artificial Analysis tracks across any vendor.",
+    ("Command A+", "knowledge_cutoff"):
+        "April 1, 2025 per Cohere's documentation — newer than Command A's June 2024 cutoff.",
+    ("Command A+", "release_date"):
+        "Released May 20, 2026 \u2014 Cohere's first Apache 2.0-licensed frontier model, "
+        "positioned for 'sovereign critical infrastructure' deployments.",
+    ("Command A+", "open_weight"):
+        "Apache 2.0 licensed, runs on as little as 1x B200 or 2x H100 GPUs thanks to W4A4 "
+        "lossless quantization \u2014 notably lower hardware requirements than Command A.",
+
+    # ---- Qwen (Alibaba) ----
+    ("Qwen3.7 Max", "intelligence"):
+        "46 on Artificial Analysis Intelligence Index, well above the ~29 average \u2014 "
+        "Alibaba's flagship reasoning model at evaluation time, matching Gemini 3.1 Pro's score.",
+    ("Qwen3.7 Max", "speed"):
+        "200 tokens/sec, well above the ~77 t/s median for reasoning models in its price "
+        "tier \u2014 unusually fast for a model at this intelligence level.",
+    ("Qwen3.7 Max", "knowledge_cutoff"):
+        "Not separately published by Alibaba for this exact release; treat as a 2025-era "
+        "cutoff consistent with the Qwen3 family's general training timeline.",
+    ("Qwen3.7 Max", "release_date"):
+        "Released May 19, 2026.",
+    ("Qwen3.7 Max", "open_weight"):
+        "Proprietary \u2014 unlike many smaller Qwen models, the Max tier is not released "
+        "with open weights.",
+
+    # ---- Grok (xAI) ----
+    ("Grok 4.3", "intelligence"):
+        "38 on Artificial Analysis Intelligence Index, well above the ~29 average.",
+    ("Grok 4.3", "output_price"):
+        "$2.50/M output \u2014 notably cheap relative to its intelligence tier; most peers "
+        "scoring in the high-30s charge $8-15/M output.",
+    ("Grok 4.3", "ttft"):
+        "~16.6s at high effort \u2014 by far the slowest time-to-first-token in this entire "
+        "table, an order of magnitude above every other reasoning model tracked. This is a "
+        "real production constraint for anything latency-sensitive, regardless of its "
+        "strong throughput once generation starts.",
+    ("Grok 4.3", "speed"):
+        "139 tokens/sec once generation starts \u2014 above average despite the very slow TTFT.",
+    ("Grok 4.3", "knowledge_cutoff"):
+        "Not independently confirmed at time of writing; xAI does not publish this as "
+        "clearly as Anthropic, OpenAI, or Google do.",
+    ("Grok 4.3", "release_date"):
+        "Released April 30, 2026.",
+    ("Grok 4.3", "open_weight"):
+        "Proprietary, API-only access via xAI.",
+    ("Grok 4.3", "image_gen"):
+        "Image generation is available via xAI's separate Aurora model in the same "
+        "ecosystem/app, not natively inside the Grok 4.3 chat model itself.",
+
+    # ---- Amazon Nova ----
+    ("Nova Pro", "intelligence"):
+        "13 on Artificial Analysis Intelligence Index, below the ~24 average for its class "
+        "\u2014 Amazon positions Nova on price-performance and AWS integration, not peak benchmark scores.",
+    ("Nova Pro", "context"):
+        "300K-token context window with vision input \u2014 enough for most financial-document "
+        "and codebase-analysis workloads Amazon markets it for, though smaller than several "
+        "rivals at this price point.",
+    ("Nova Pro", "knowledge_cutoff"):
+        "December 2024, per Amazon's model metadata \u2014 also the model's release-adjacent cutoff.",
+    ("Nova Pro", "release_date"):
+        "Released December 2024 alongside the rest of the original Nova family (Micro, Lite, Pro, Premier).",
+    ("Nova Pro", "eval_cost"):
+        "$200.98 to run the Intelligence Index suite \u2014 mid-pack, reflecting both moderate "
+        "pricing and relatively concise (4.4M token) responses on the suite.",
+    ("Nova Pro", "open_weight"):
+        "Proprietary, available only via Amazon Bedrock.",
+    ("Nova Pro", "video_input"):
+        "Native video input \u2014 Amazon markets this explicitly for video understanding and "
+        "VATEX video-description benchmarks. Voice is handled by a separate sibling model "
+        "(Nova Sonic) rather than Nova Pro itself.",
+    ("Nova Micro", "intelligence"):
+        "10 on Artificial Analysis Intelligence Index, slightly below the ~11 average for "
+        "its class \u2014 Amazon's text-only, lowest-latency, lowest-cost Nova tier.",
+    ("Nova Micro", "speed"):
+        "~300 tokens/sec \u2014 notably fast, consistent with Amazon's positioning of Micro "
+        "as the lowest-latency model in the Nova family.",
+    ("Nova Micro", "vision"):
+        "Text-only \u2014 Nova Micro is the one model in the Nova family without image/video "
+        "input; use Nova Lite or Pro for any multimodal requirement.",
+    ("Nova Micro", "knowledge_cutoff"):
+        "December 2024, aligned with the rest of the original Nova family release.",
+    ("Nova Micro", "release_date"):
+        "Released December 2024.",
+    ("Nova Micro", "eval_cost"):
+        "$6.38 to run the Intelligence Index suite \u2014 one of the cheapest eval runs in "
+        "this table, consistent with its sub-$0.15/M pricing.",
+    ("Nova Micro", "open_weight"):
+        "Proprietary, available only via Amazon Bedrock.",
+}
+
+
+MODELS: list[Model] = [
+    Model("Claude Haiku 4.5", "Anthropic", 1.00, 5.00, 0.10, 200_000, 30, 120, 0.8,
+          knowledge_cutoff="February 2025", release_date="October 15, 2025", eval_cost=None,
+          reasoning=False, vision=True, open_weight=False,
+          audio_input=False, video_input=False, image_gen=False,
+          notes="Fastest, cheapest current Claude tier; oldest cutoff in the lineup. Image input only — no native audio or video."),
+    Model("Claude Sonnet 4.6", "Anthropic", 3.00, 15.00, 0.30, 1_000_000, 42, 90, 1.5,
+          knowledge_cutoff="August 2025", release_date="February 17, 2026", eval_cost=None,
+          reasoning=True, vision=True, open_weight=False, ocr_accuracy=95.2,
+          audio_input=False, video_input=False, image_gen=False,
+          notes="Production default for most Claude workloads; near-Opus coding/document quality at 40% lower cost. Image input only."),
+    Model("Claude Opus 4.7", "Anthropic", 5.00, 25.00, 0.50, 1_000_000, 54, 50, 13.3,
+          knowledge_cutoff="January 2026", release_date="April 16, 2026", eval_cost=3737.82,
+          reasoning=True, vision=True, open_weight=False,
+          audio_input=False, video_input=False, image_gen=False,
+          notes="Anthropic's highest-capability generally-available model at evaluation time; superseded by Opus 4.8 at the same price. Image input only."),
+    Model("GPT-5.4 mini", "OpenAI", 0.75, 4.50, 0.075, 400_000, 40, 155, 0.66,
+          knowledge_cutoff="August 2025 (est., family-aligned)", release_date="March 2026", eval_cost=None,
+          reasoning=True, vision=True, open_weight=False,
+          audio_input=False, video_input=False, image_gen=True,
+          notes="Practical default for most enterprise GPT workloads; beats prior-gen GPT-5 mini at the same price. Image generation via tool call (DALL-E), not native understanding of audio/video."),
+    Model("GPT-5.4", "OpenAI", 2.50, 15.00, 0.25, 1_100_000, 51, 166, 2.5,
+          knowledge_cutoff="August 31, 2025", release_date="March 5, 2026", eval_cost=2131.77,
+          reasoning=True, vision=True, open_weight=False, ocr_accuracy=91.8,
+          audio_input=False, video_input=False, image_gen=True,
+          notes="OpenAI's frontier model for complex professional work; largest GPT-5.4-family context window. No native audio/video understanding."),
+    Model("GPT-5.5", "OpenAI", 5.00, 30.00, 0.50, 1_050_000, 55, 79, 5.0,
+          knowledge_cutoff="December 1, 2025", release_date="April 23, 2026", eval_cost=None,
+          reasoning=True, vision=True, open_weight=False,
+          audio_input=False, video_input=False, image_gen=True,
+          notes="OpenAI's strongest agentic coding model at evaluation time; more token-efficient than GPT-5.4. No native audio/video understanding."),
+    Model("Gemini 3.1 Flash-Lite", "Google", 0.25, 1.50, 0.025, 1_000_000, 25, 359, 0.5,
+          knowledge_cutoff="January 2025", release_date="March 4, 2026", eval_cost=93.72,
+          reasoning=True, vision=True, open_weight=False,
+          audio_input=True, video_input=True, image_gen=True,
+          notes="Fastest model tracked; best value per dollar for high-volume, latency-sensitive production traffic. Genuinely native audio+video input, like Pro."),
+    Model("Gemini 3.1 Pro", "Google", 2.00, 12.00, 0.20, 2_000_000, 46, 138, 2.6,
+          knowledge_cutoff="January 2025", release_date="March 2026", eval_cost=815.11,
+          reasoning=True, vision=True, open_weight=False,
+          audio_input=True, video_input=True, image_gen=True,
+          notes="Largest proprietary context window tracked; the only model in this table with native audio AND video understanding in the base model."),
+    Model("Llama 4 Scout", "Meta", 0.08, 0.30, None, 10_000_000, 14, 140, 1.0,
+          knowledge_cutoff="August 2024", release_date="April 5, 2026", eval_cost=26.42,
+          reasoning=False, vision=True, open_weight=True,
+          audio_input=False, video_input=True, image_gen=False,
+          notes="Largest advertised context window of any model here; effective usable context is materially lower per independent RULER testing. Native image+video input; no audio."),
+    Model("Llama 4 Maverick", "Meta", 0.27, 0.85, None, 1_000_000, 14, 110, 1.2,
+          knowledge_cutoff="August 2024", release_date="April 5, 2026", eval_cost=None,
+          reasoning=False, vision=True, open_weight=True,
+          audio_input=True, video_input=True, image_gen=False,
+          notes="Open-weight, self-hostable, MoE architecture (17B active / 400B total, 128 experts); very low per-token cost. Unlike Scout, Maverick also takes native audio input."),
+    Model("DeepSeek V3.2", "DeepSeek", 0.28, 0.42, 0.028, 128_000, 25, 100, 1.0,
+          knowledge_cutoff="2024-2025 (exact date not separately published by DeepSeek)",
+          release_date="December 2025", eval_cost=None,
+          reasoning=False, vision=False, open_weight=True,
+          audio_input=False, video_input=False, image_gen=False,
+          notes="MIT-licensed; smallest context window in this table; efficient non-reasoning workhorse tier. Text-only — no image, audio, or video input."),
+    Model("DeepSeek R1", "DeepSeek", 0.55, 2.19, 0.14, 64_000, 40, 90, 1.8,
+          knowledge_cutoff="2024-2025 (exact date not separately published by DeepSeek)",
+          release_date="January 2025 (original R1); ongoing point releases since", eval_cost=None,
+          reasoning=True, vision=False, open_weight=True,
+          audio_input=False, video_input=False, image_gen=False,
+          notes="Reasoning-tuned; historically the lowest-cost route to o1-class reasoning quality; smallest context window here. Text-only."),
+    Model("Mistral Large 3", "Mistral", 0.50, 1.50, 0.05, 256_000, 32, 95, 1.1,
+          knowledge_cutoff="Mid-2025 (exact date not separately published by Mistral)",
+          release_date="December 2025", eval_cost=None,
+          reasoning=False, vision=False, open_weight=True,
+          audio_input=False, video_input=False, image_gen=False,
+          notes="Apache 2.0 licensed; selective-scale MoE; strong multilingual and long-document performance for self-hosted EU deployments. Text-only."),
+    Model("Phi-4", "Microsoft", 0.13, 0.50, None, 16_000, 5, 35, 2.1,
+          knowledge_cutoff="June 2024", release_date="January 10, 2025", eval_cost=None,
+          reasoning=False, vision=False, open_weight=True,
+          audio_input=False, video_input=False, image_gen=False,
+          notes="Small (14B) self-hostable model for narrow STEM/reasoning tasks; smallest context window tracked. Text-only."),
+    Model("Command A", "Cohere", 2.50, 10.00, None, 256_000, 8, 68, 1.6,
+          knowledge_cutoff="June 1, 2024", release_date="2025", eval_cost=None,
+          reasoning=False, vision=False, open_weight=True,
+          audio_input=False, video_input=False, image_gen=False,
+          notes="Cohere's enterprise RAG/tool-use workhorse; 111B params, requires 2 GPUs to self-host. Text-only — Cohere ships vision/audio as separate models (Command A Vision, Aya Vision, Transcribe), not in Command A itself."),
+    Model("Command A+", "Cohere", 2.50, 10.00, None, 200_000, 37, 201, 0.35,
+          knowledge_cutoff="April 1, 2025", release_date="May 20, 2026", eval_cost=None,
+          reasoning=True, vision=True, open_weight=True,
+          audio_input=False, video_input=False, image_gen=False,
+          notes="Cohere's first MoE and first Apache 2.0 frontier model; vision (image) + reasoning + agentic in one model — but no native audio or video."),
+    Model("Qwen3.7 Max", "Alibaba", 2.50, 7.50, None, 1_000_000, 46, 200, 2.6,
+          knowledge_cutoff="2025 (exact date not separately published by Alibaba)",
+          release_date="May 19, 2026", eval_cost=None,
+          reasoning=True, vision=False, open_weight=False,
+          audio_input=False, video_input=False, image_gen=False,
+          notes="Alibaba's flagship reasoning model; matches Gemini 3.1 Pro's Intelligence Index at unusually high speed. Text-only at the Max tier (smaller Qwen3.5 models do support image/video)."),
+    Model("Grok 4.3", "xAI", 1.25, 2.50, None, 1_000_000, 38, 139, 16.6,
+          knowledge_cutoff="Not independently confirmed",
+          release_date="April 30, 2026", eval_cost=None,
+          reasoning=True, vision=True, open_weight=False,
+          audio_input=False, video_input=False, image_gen=True,
+          notes="Strong intelligence-to-price ratio, but by far the slowest time-to-first-token tracked here. Image input + image generation (Aurora) in the xAI ecosystem; no native audio/video understanding."),
+    Model("Nova Pro", "Amazon", 0.80, 3.20, None, 300_000, 13, 75, 1.5,
+          knowledge_cutoff="December 2024", release_date="December 2024", eval_cost=200.98,
+          reasoning=False, vision=True, open_weight=False,
+          audio_input=False, video_input=True, image_gen=False,
+          notes="AWS-native multimodal model; priced and positioned for Bedrock-integrated enterprise workloads, not peak benchmark scores. Native image+video input; voice is a separate sibling model (Nova Sonic), not built into Nova Pro itself."),
+    Model("Nova Micro", "Amazon", 0.04, 0.14, None, 128_000, 10, 300, 0.4,
+          knowledge_cutoff="December 2024", release_date="December 2024", eval_cost=6.38,
+          reasoning=False, vision=False, open_weight=False,
+          audio_input=False, video_input=False, image_gen=False,
+          notes="Amazon's lowest-latency, lowest-cost, text-only Nova tier — no image, audio, or video input at all."),
+]
+
+
+# ============================================================
+# USE CASE DATABASE
+# All 29 insurance use cases from the companion deck, each pre-scored
+# with the same complexity/latency/volume/context/regulated/vision/
+# open_weight axes used in the deck and the in-chat artifact, plus
+# a short list of keywords/synonyms so free-text queries can match.
+# ============================================================
+
+@dataclass
+class UseCase:
+    name: str
+    category: str
+    complexity: int      # 1-5: simple lookup -> deep reasoning
+    latency: int          # 1-5: batch ok -> real-time
+    volume: int           # 1-5: low volume -> very high volume
+    context: int          # 1-5: <8K tokens -> 2M+ tokens
+    regulated: bool
+    vision: bool
+    open_weight: bool
+    note: str = ""
+    keywords: list[str] = field(default_factory=list)
+    audio: bool = False     # needs native audio understanding (not just bolted-on transcription)
+    video: bool = False     # needs native video understanding
+    image_gen: bool = False  # needs image generation capability
+
+
+USE_CASES: list[UseCase] = [
+    UseCase("FNOL triage", "Claims", 3, 4, 4, 3, True, False, False,
+            "High volume, moderate complexity intake routing.",
+            ["fnol", "first notice of loss", "claim intake", "triage"]),
+    UseCase("Underwriting document review", "Underwriting", 4, 2, 2, 5, True, False, False,
+            "Long documents + regulatory exposure favor accuracy over speed.",
+            ["underwriting review", "submission review", "doc review"]),
+    UseCase("Commercial submission triage", "Underwriting", 3, 3, 3, 5, False, False, False,
+            "Large multi-document commercial submissions.",
+            ["commercial submission", "submission triage"]),
+    UseCase("Fraud ring detection", "Claims / SIU", 4, 3, 3, 2, True, False, False,
+            "Reasoning-heavy cross-referencing of linked entities.",
+            ["fraud detection", "fraud ring", "siu", "special investigation"]),
+    UseCase("Claims document brief", "Claims", 3, 3, 3, 3, True, False, False,
+            "Summarize a claim packet for an adjuster.",
+            ["claims brief", "claim summary", "adjuster brief"]),
+    UseCase("Policy comparison (broker)", "Distribution", 2, 2, 3, 3, False, False, False,
+            "Line-by-line comparison against a standard form.",
+            ["policy comparison", "broker comparison", "coverage comparison"]),
+    UseCase("Renewal data reconstruction", "Underwriting ops", 3, 2, 2, 4, False, False, False,
+            "Extract actuarial metrics from loss runs and filings.",
+            ["renewal data", "loss run", "data reconstruction"]),
+    UseCase("Producer / agent copilot", "Distribution", 2, 3, 4, 2, False, False, False,
+            "RAG-style Q&A for producers over a knowledge base.",
+            ["agent copilot", "producer copilot", "agent assistant"]),
+    UseCase("Customer self-service chat", "Service", 1, 5, 5, 1, False, False, False,
+            "Highest volume, lowest complexity, real-time.",
+            ["customer chat", "chatbot", "self service", "support chat"]),
+    UseCase("Regulatory filing review", "Compliance", 5, 1, 1, 3, True, False, False,
+            "Highest-stakes text accuracy use case.",
+            ["regulatory filing", "compliance review", "filing review"]),
+    UseCase("Reinsurance treaty analysis", "Reinsurance", 4, 1, 1, 5, True, False, False,
+            "Multi-layer treaty programs need the largest context windows.",
+            ["reinsurance treaty", "treaty analysis", "cession"]),
+    UseCase("Underwriting guideline Q&A", "Underwriting", 2, 3, 4, 2, False, False, False,
+            "RAG over a fixed underwriting guideline manual.",
+            ["underwriting guideline", "guideline q&a", "guideline lookup"]),
+    UseCase("Accelerated life underwriting", "Life & Health", 4, 2, 2, 4, True, False, False,
+            "Regulated under NAIC AI Model Bulletin; medical record reasoning.",
+            ["life underwriting", "accelerated underwriting", "life insurance underwriting"]),
+    UseCase("Protective value / mortality analysis", "Life & Health", 5, 1, 1, 3, True, False, False,
+            "Highest reasoning depth; medical impairment scoring.",
+            ["mortality analysis", "protective value", "impairment scoring"]),
+    UseCase("Subrogation & litigation correspondence", "Claims / Legal", 2, 3, 3, 2, False, False, False,
+            "Drafting-heavy correspondence at moderate stakes.",
+            ["subrogation", "litigation correspondence", "demand letter"]),
+    UseCase("Property risk modeling (imagery)", "Underwriting", 3, 2, 3, 2, False, True, False,
+            "Aerial/satellite imagery analysis at scale.",
+            ["property risk", "aerial imagery", "satellite imagery", "roof imagery"]),
+    UseCase("Portfolio appetite summarization", "Underwriting leadership", 3, 1, 1, 4, False, False, False,
+            "Long-document synthesis for leadership-facing output.",
+            ["portfolio appetite", "book summary", "appetite summary"]),
+    UseCase("ACORD / invoice OCR", "Document processing", 3, 3, 4, 2, True, True, False,
+            "Vision-heavy intake; measured OCR accuracy matters.",
+            ["acord", "invoice ocr", "ocr", "invoice processing"]),
+    UseCase("Policy document digitization", "Document processing", 3, 2, 3, 3, True, True, False,
+            "Self-hosting may be required for data residency.",
+            ["policy digitization", "document digitization", "scan processing"]),
+    UseCase("Claim packet synthesis", "Claims", 4, 3, 3, 4, True, True, False,
+            "Cross-document contradiction-finding across a full packet.",
+            ["claim packet", "packet synthesis", "multi-document claim"]),
+    UseCase("Telematics-based dynamic pricing", "Pricing", 4, 2, 4, 2, True, False, False,
+            "Numeric reasoning over streaming data plus rate justification.",
+            ["telematics", "dynamic pricing", "usage based insurance", "ubi"]),
+    UseCase("Actuarial experience studies", "Actuarial", 4, 1, 1, 5, False, False, False,
+            "Large structured datasets across many cuts.",
+            ["actuarial study", "experience study", "loss ratio analysis"]),
+    UseCase("Propensity to buy / renew / lapse", "Distribution / Retention", 2, 3, 4, 2, False, False, False,
+            "High-volume scoring at moderate complexity.",
+            ["propensity model", "renewal propensity", "lapse prediction", "retention"]),
+    UseCase("Renewal letter & coverage-gap generation", "Service / Retention", 1, 3, 5, 1, False, False, False,
+            "Templated, personalized drafting at scale.",
+            ["renewal letter", "coverage gap", "renewal communication"]),
+    UseCase("Parametric claims triggers", "Claims / Product", 3, 4, 3, 1, True, False, False,
+            "Validate a data trigger against policy terms.",
+            ["parametric insurance", "parametric trigger", "index trigger"]),
+    UseCase("Algorithmic bias / discrimination testing", "Compliance / Actuarial", 5, 1, 1, 3, True, False, False,
+            "Highest-stakes reasoning; active litigation risk.",
+            ["bias testing", "discrimination testing", "algorithmic bias", "model fairness"]),
+    UseCase("AI/cyber liability underwriting", "Underwriting (Specialty)", 5, 1, 1, 3, True, False, False,
+            "Evaluating a counterparty's own AI usage and exposure.",
+            ["cyber liability", "ai liability underwriting", "tech e&o"]),
+    UseCase("Specialty risk engineering reports", "Underwriting (Specialty)", 4, 1, 2, 5, False, False, False,
+            "Long technical reports synthesized into a risk assessment.",
+            ["risk engineering", "specialty underwriting report"]),
+    UseCase("Predictive win-rate quoting", "Underwriting / Distribution", 3, 2, 3, 2, False, False, False,
+            "Structured scoring at submission volume.",
+            ["win rate", "predictive quoting", "quote scoring"]),
+    UseCase("Cross-sell / next-best-product", "Distribution (Agency)", 2, 3, 4, 1, False, False, False,
+            "High-volume propensity scoring across a book of business.",
+            ["cross sell", "next best product", "upsell"]),
+    UseCase("Agentic quote-and-bind work cells", "Underwriting (Simple risks)", 5, 2, 2, 2, True, False, False,
+            "Multi-step autonomous action; least-proven category, keep supervised.",
+            ["quote and bind", "agentic underwriting", "autonomous quoting"]),
+    UseCase("Synthetic media detection in claims", "Claims / SIU", 4, 2, 2, 2, True, True, False,
+            note="Deepfake/staged-image detection is multimodal reasoning.",
+            keywords=["synthetic media", "deepfake detection", "staged accident", "manipulated photo"]),
+    UseCase("Call center voice transcription & QA", "Service / Compliance", 3, 3, 4, 2, True, False, False,
+            audio=True,
+            note="Needs native audio understanding (tone, overlapping speakers, hold music) for accurate QA scoring, not just word-for-word transcription.",
+            keywords=["voice transcription", "call center", "call recording", "ivr", "phone call analysis", "voice qa"]),
+    UseCase("Video-based property/vehicle inspection", "Claims / Underwriting", 4, 2, 2, 2, False, True, False,
+            video=True,
+            note="Walkthrough video of property or vehicle damage analyzed directly, without manual frame extraction.",
+            keywords=["video inspection", "drone footage", "video walkthrough", "vehicle damage video", "site inspection video"]),
+    UseCase("Telehealth / virtual claims consultation analysis", "Claims / Life & Health", 4, 2, 1, 2, True, True, False,
+            audio=True, video=True,
+            note="Recorded virtual consultations combine speech and visual cues (injury demonstration, document holding) in one stream.",
+            keywords=["telehealth", "virtual consultation", "video call analysis", "remote medical assessment"]),
+    UseCase("Marketing image generation for campaigns", "Marketing / Distribution", 2, 1, 2, 1, False, False, False,
+            image_gen=True,
+            note="Generating on-brand visual assets for agent/broker marketing materials, not analyzing existing images.",
+            keywords=["image generation", "marketing visuals", "ad creative", "generate image", "campaign graphics"]),
+    UseCase("Branch/claims-center signage and document mockups", "Operations / Marketing", 1, 1, 1, 1, False, False, False,
+            image_gen=True,
+            note="Low-stakes internal visual asset creation; any image-generation-capable model is overkill-proof here.",
+            keywords=["signage", "mockup", "document template image", "internal graphics"]),
+]
+
+
+# ============================================================
+# SCORING LOGIC
+# Identical to the logic implemented in the in-chat recommendation
+# artifact and described in the deck (Section 6.1 / addendum Section 3.1).
+# ============================================================
+
+INTEL_TARGET_BY_COMPLEXITY = {1: 15, 2: 25, 3: 35, 4: 45, 5: 55}
+CONTEXT_FLOOR_BY_LEVEL = {1: 8_000, 2: 32_000, 3: 200_000, 4: 1_000_000, 5: 2_000_000}
+
+
+def score_model(m: Model, uc: UseCase) -> float:
+    s = 0.0
+
+    # 1. Complexity -> Intelligence target. Under-provisioning is penalized
+    #    harder than over-provisioning (quality risk costs more than headroom).
+    intel = m.intelligence if m.intelligence is not None else INTEL_TARGET_BY_COMPLEXITY[3]
+    target = INTEL_TARGET_BY_COMPLEXITY[uc.complexity]
+    s -= abs(intel - target) * 1.3
+    if intel < target - 10:
+        s -= 25
+
+    # 2. Latency -> speed and time-to-first-token. A baseline TTFT penalty applies
+    #    at every latency level (an outlier-slow TTFT, e.g. >10s, is a real cost
+    #    even for batch-tolerant workloads — timeouts, poor debugging UX, queuing
+    #    backpressure) and scales up sharply as latency sensitivity increases.
+    s -= m.ttft * 0.8
+    if uc.latency >= 4:
+        s += min(m.speed / 4, 40) - m.ttft * 3
+
+    # 3. Volume -> cost weighting. High volume penalizes expensive models harder.
+    if uc.volume >= 4:
+        s -= (m.output_price / 2 + m.input_price) * 2.5
+
+    # 4. Context -> hard filter, then a small bonus for headroom.
+    ctx_need = CONTEXT_FLOOR_BY_LEVEL[uc.context]
+    if m.context < ctx_need:
+        s -= 45
+    else:
+        s += min((m.context - ctx_need) / 500_000, 6)
+
+    # 5. Regulated workflow -> soft penalty for non-reasoning models at
+    #    complexity 3+, small bonus for Anthropic (benchmarked low
+    #    hallucination rates make it a reasonable regulated default).
+    if uc.regulated and not m.reasoning and uc.complexity >= 3:
+        s -= 10
+    if uc.regulated and m.vendor == "Anthropic":
+        s += 6
+
+    # 6. Document modality -> vision is a hard requirement if needed.
+    #    Measured OCR/doc accuracy is weighted heavily here: a misread
+    #    field on a real document costs more than the token savings, so
+    #    this is intentionally allowed to outweigh the volume/cost
+    #    penalty above. Models with no published accuracy figure get a
+    #    small caution penalty rather than a free pass relative to
+    #    models that *do* publish a number.
+    if uc.vision:
+        if not m.vision:
+            s -= 100
+        elif m.ocr_accuracy:
+            s += (m.ocr_accuracy - 85) * 2.2
+        else:
+            s -= 6
+
+    # 7. Open weights -> hard requirement if self-hosting is needed.
+    if uc.open_weight and not m.open_weight:
+        s -= 60
+
+    # 8. Audio -> hard requirement for native audio understanding. This is
+    #    a real capability gap, not a quality spectrum: as of this data,
+    #    only Gemini 3.1 (Pro/Flash-Lite) and Llama 4 Maverick offer it.
+    #    A model without it cannot do the job at all, regardless of how
+    #    well it scores on every other axis.
+    if uc.audio and not m.audio_input:
+        s -= 120
+
+    # 9. Video -> hard requirement for native video understanding (frame/
+    #    motion analysis in one call, not a pre-extracted-frames workaround).
+    if uc.video and not m.video_input:
+        s -= 120
+
+    # 10. Image generation -> hard requirement if the use case needs the
+    #     vendor to produce images, not just read them.
+    if uc.image_gen and not m.image_gen:
+        s -= 80
+
+    return s
+
+
+def rank_models(uc: UseCase) -> list[tuple[Model, float]]:
+    ranked = [(m, score_model(m, uc)) for m in MODELS]
+    ranked.sort(key=lambda pair: pair[1], reverse=True)
+    return ranked
+
+
+# ============================================================
+# USE CASE MATCHING (free-text -> UseCase)
+# ============================================================
+
+def find_use_case(query: str) -> Optional[UseCase]:
+    """Find the best-matching known use case for a free-text query."""
+    q = query.lower().strip()
+    if not q:
+        return None
+
+    # Exact name match first.
+    for uc in USE_CASES:
+        if uc.name.lower() == q:
+            return uc
+
+    # Keyword / substring match, scored by overlap.
+    best, best_score = None, 0
+    for uc in USE_CASES:
+        haystack = [uc.name.lower()] + uc.keywords
+        score = 0
+        for term in haystack:
+            if term in q or q in term:
+                score += len(term)
+        if score > best_score:
+            best, best_score = uc, score
+
+    return best
+
+
+def guess_use_case_from_description(query: str) -> UseCase:
+    """
+    Fallback: if no known use case matches, build a rough UseCase from
+    simple heuristics on the free-text description so the tool still
+    returns something useful instead of failing.
+    """
+    q = query.lower()
+
+    def has_any(*words):
+        return any(w in q for w in words)
+
+    complexity = 3
+    if has_any("simple", "basic", "lookup", "classify", "classification", "routing"):
+        complexity = 2
+    if has_any("reasoning", "complex", "analysis", "investigat", "fraud", "legal", "compliance", "regulat"):
+        complexity = 4
+    if has_any("highest stakes", "bias", "discrimination", "litigation", "audit"):
+        complexity = 5
+
+    latency = 3
+    if has_any("real time", "real-time", "chat", "instant", "live"):
+        latency = 5
+    if has_any("batch", "overnight", "offline", "report"):
+        latency = 1
+
+    volume = 3
+    if has_any("high volume", "scale", "millions", "thousands of", "every customer"):
+        volume = 4
+    if has_any("low volume", "occasional", "rare", "few"):
+        volume = 1
+
+    context = 2
+    if has_any("long document", "large document", "treaty", "full file", "entire", "huge", "big context"):
+        context = 4
+    if has_any("short", "single field", "one line"):
+        context = 1
+
+    regulated = has_any("regulat", "compliance", "audit", "legal", "underwrit", "pricing", "bias",
+                         "discrimination", "medical", "claim denial", "rate")
+    vision = has_any("image", "photo", "scan", "pdf", "ocr", "document", "invoice", "form", "imagery")
+    audio = has_any("audio", "voice", "call recording", "transcri", "speech", "phone call", "ivr")
+    video = has_any("video", "footage", "drone", "walkthrough", "recording of")
+    image_gen = has_any("generate an image", "generate image", "create an image", "image generation",
+                         "marketing visual", "graphic design", "ad creative", "mockup image")
+    open_weight = has_any("self-host", "self host", "on-prem", "on prem", "data residency", "open weight", "open-weight")
+
+    return UseCase(
+        name=f'Custom: "{query.strip()}"',
+        category="Ad hoc",
+        complexity=complexity, latency=latency, volume=volume, context=context,
+        regulated=regulated, vision=vision, open_weight=open_weight,
+        audio=audio, video=video, image_gen=image_gen,
+        note="No exact match in the known use-case list — this is a best-effort "
+             "read of your description. Try rephrasing, or use --list to see known use cases.",
+    )
+
+
+# ============================================================
+# OUTPUT FORMATTING
+# ============================================================
+
+def fmt_money(x: float, decimals: int = 2) -> str:
+    return f"${x:,.{decimals}f}"
+
+
+def explain_runner_up(top: Model, runner_up: Model) -> str:
+    if (runner_up.intelligence or 0) > (top.intelligence or 0):
+        return "higher accuracy"
+    if runner_up.input_price < top.input_price:
+        return "lower cost at scale"
+    if runner_up.context > top.context:
+        return "a larger context window"
+    return "a different latency profile"
+
+
+def print_recommendation(uc: UseCase, top_n: int = 5, explain: bool = False) -> None:
+    ranked = rank_models(uc)
+    top_model, top_score = ranked[0]
+    runner_up, _ = ranked[1]
+
+    print()
+    print("=" * 72)
+    print(f"USE CASE: {uc.name}")
+    if uc.category != "Ad hoc":
+        print(f"Category: {uc.category}")
+    if uc.note:
+        print(f"Note: {uc.note}")
+    print("=" * 72)
+
+    flags = []
+    if uc.regulated:
+        flags.append("regulated/auditable")
+    if uc.vision:
+        flags.append("vision/document input")
+    if uc.audio:
+        flags.append("native audio input")
+    if uc.video:
+        flags.append("native video input")
+    if uc.image_gen:
+        flags.append("image generation")
+    if uc.open_weight:
+        flags.append("needs open weights / self-hosting")
+    flag_str = ", ".join(flags) if flags else "none"
+    print(f"Profile: complexity={uc.complexity}/5  latency={uc.latency}/5  "
+          f"volume={uc.volume}/5  context={uc.context}/5  flags=[{flag_str}]")
+    print()
+
+    print(f"RECOMMENDED: {top_model.name}  ({top_model.vendor})")
+    intel_str = str(top_model.intelligence) if top_model.intelligence is not None else "n/a"
+    print(f"  Intelligence Index: {intel_str}   "
+          f"Context: {top_model.context:,} tokens   "
+          f"Open weights: {'yes' if top_model.open_weight else 'no'}")
+    print(f"  Price: {fmt_money(top_model.input_price)}/M in, "
+          f"{fmt_money(top_model.output_price)}/M out, "
+          f"blended {fmt_money(top_model.blended_price())}/M (7:2:1 cache:in:out)")
+    print(f"  Speed: {top_model.speed} tok/s   TTFT: {top_model.ttft}s   "
+          f"Cutoff: {top_model.knowledge_cutoff}   Released: {top_model.release_date}")
+    print()
+    print(f"  Runner-up: {runner_up.name} ({runner_up.vendor}) — consider if you need "
+          f"{explain_runner_up(top_model, runner_up)}.")
+
+    if uc.regulated:
+        print("  Regulated workflow: log prompts/model version/output, keep a human")
+        print("  in the loop on edge cases, and document a model card for audit.")
+    if uc.complexity == 5 and uc.regulated:
+        print("  High complexity + regulated: treat any model's output as analysis")
+        print("  feeding an actuary or compliance sign-off — never the decision itself.")
+
+    print()
+    print(f"Top {top_n} models for this use case:")
+    print(f"  {'Model':<22}{'Vendor':<11}{'In $/M':>8}{'Out $/M':>9}{'Blend':>8}"
+          f"{'Context':>11}{'Intel.':>7}{'Speed':>7}{'TTFT':>7}")
+    for m, sc in ranked[:top_n]:
+        intel_disp = str(m.intelligence) if m.intelligence is not None else "n/a"
+        print(f"  {m.name:<22}{m.vendor:<11}{m.input_price:>8.2f}{m.output_price:>9.2f}"
+              f"{m.blended_price():>8.3f}{m.context:>11,}{intel_disp:>7}{m.speed:>7}{m.ttft:>7.1f}")
+    print()
+
+    if explain:
+        print_model_justification(top_model)
+
+
+PARAM_ORDER = [
+    ("intelligence", "Intelligence Index"),
+    ("speed", "Output speed (tok/s)"),
+    ("ttft", "Time to first token"),
+    ("input_price", "Input price"),
+    ("output_price", "Output price"),
+    ("blended_price", "Blended price"),
+    ("cache_hit_price", "Cache hit price"),
+    ("context", "Context window"),
+    ("knowledge_cutoff", "Knowledge cutoff"),
+    ("release_date", "Release date"),
+    ("eval_cost", "Eval cost"),
+    ("open_weight", "Open weights"),
+    ("vision", "Vision / document input"),
+    ("audio_input", "Native audio input"),
+    ("video_input", "Native video input"),
+    ("image_gen", "Image generation"),
+]
+
+
+def format_param_value(m: Model, key: str) -> str:
+    if key == "intelligence":
+        return str(m.intelligence) if m.intelligence is not None else "n/a"
+    if key == "speed":
+        return f"{m.speed} tok/s"
+    if key == "ttft":
+        return f"{m.ttft}s"
+    if key == "input_price":
+        return f"{fmt_money(m.input_price)}/M"
+    if key == "output_price":
+        return f"{fmt_money(m.output_price)}/M"
+    if key == "blended_price":
+        return f"{fmt_money(m.blended_price(), 3)}/M"
+    if key == "cache_hit_price":
+        return f"{fmt_money(m.cache_hit_price, 3)}/M" if m.cache_hit_price is not None else "not published"
+    if key == "context":
+        return f"{m.context:,} tokens"
+    if key == "knowledge_cutoff":
+        return m.knowledge_cutoff
+    if key == "release_date":
+        return m.release_date
+    if key == "eval_cost":
+        return fmt_money(m.eval_cost) if m.eval_cost is not None else "not published"
+    if key == "open_weight":
+        return "yes" if m.open_weight else "no"
+    if key == "audio_input":
+        return "yes" if m.audio_input else "no"
+    if key == "video_input":
+        return "yes" if m.video_input else "no"
+    if key == "image_gen":
+        return "yes" if m.image_gen else "no"
+    if key == "vision":
+        return "yes" if m.vision else "no"
+    return "?"
+
+
+def print_model_justification(m: Model) -> None:
+    """Print a full per-parameter justification block for one model."""
+    print("-" * 72)
+    print(f"WHY THESE NUMBERS — {m.name} ({m.vendor})")
+    print("-" * 72)
+    if m.notes:
+        print(f"  {m.notes}\n")
+    for key, label in PARAM_ORDER:
+        value = format_param_value(m, key)
+        print(f"  {label}: {value}")
+        reason = m.justify(key)
+        for line in textwrap.wrap(reason, width=86, initial_indent="    ", subsequent_indent="    "):
+            print(line)
+        print()
+
+
+def print_use_case_list() -> None:
+    print("\nKnown use cases (type any of these, or a close variation):\n")
+    by_category: dict[str, list[UseCase]] = {}
+    for uc in USE_CASES:
+        by_category.setdefault(uc.category, []).append(uc)
+    for cat, items in by_category.items():
+        print(f"  {cat}")
+        for uc in items:
+            print(f"    - {uc.name}")
+    print()
+
+
+def print_model_table() -> None:
+    print("\nFull model table:\n")
+    print(f"  {'Model':<22}{'Vendor':<11}{'In $/M':>8}{'Out $/M':>9}{'Blend':>8}"
+          f"{'Context':>11}{'Intel.':>7}{'Speed':>7}{'TTFT':>7}{'Open?':>7}")
+    for m in MODELS:
+        intel_disp = str(m.intelligence) if m.intelligence is not None else "n/a"
+        print(f"  {m.name:<22}{m.vendor:<11}{m.input_price:>8.2f}{m.output_price:>9.2f}"
+              f"{m.blended_price():>8.3f}{m.context:>11,}{intel_disp:>7}{m.speed:>7}{m.ttft:>7.1f}"
+              f"{'yes' if m.open_weight else 'no':>7}")
+        print(f"    cutoff: {m.knowledge_cutoff}   released: {m.release_date}")
+    print()
+    print("  Blended price uses Artificial Analysis's 7:2:1 cache-hit:input:output ratio.")
+    print("  Source: vendor API pricing pages + Artificial Analysis, accessed Jun 2026.")
+    print("  Treat as a snapshot — model pricing changes frequently across every vendor.")
+    print("  Run with --explain <model name> for a full per-parameter justification.\n")
+
+
+def print_explain_model(name: str) -> bool:
+    """Print justification for a model looked up by (partial, case-insensitive) name."""
+    q = name.lower().strip()
+    matches = [m for m in MODELS if q in m.name.lower()]
+    if not matches:
+        print(f'\nNo model matching "{name}" found. Run --models to see all model names.\n')
+        return False
+    for m in matches:
+        print_model_justification(m)
+    return True
+
+
+
+
+# ============================================================
+# CHAT INTERFACE
+# ============================================================
+
+BANNER = """
+Model Advisor — which LLM should you use for this job?
+
+Describe a use case in plain English (e.g. "FNOL triage" or
+"summarize a 200-page commercial submission") and I'll recommend a model,
+with reasoning, across Claude, GPT, Gemini, Llama, DeepSeek, and Mistral.
+
+Commands:
+  list                 show all known use cases
+  models                show the full model table
+  explain <model name>   full per-parameter justification for one model
+  <use case> +explain    recommendation + justification for the top model
+  help                   show this message again
+  quit                   exit
+"""
+
+
+def run_chat() -> None:
+    print(textwrap.dedent(BANNER))
+    while True:
+        try:
+            query = input("Use case > ").strip()
+        except (EOFError, KeyboardInterrupt):
+            print("\nGoodbye.")
+            break
+
+        if not query:
+            continue
+        low = query.lower()
+        if low in ("quit", "exit", "q"):
+            print("Goodbye.")
+            break
+        if low in ("help", "?"):
+            print(textwrap.dedent(BANNER))
+            continue
+        if low in ("list", "use cases", "usecases"):
+            print_use_case_list()
+            continue
+        if low in ("models", "model table"):
+            print_model_table()
+            continue
+        if low.startswith("explain "):
+            print_explain_model(query[8:].strip())
+            continue
+
+        explain = False
+        if low.endswith("+explain"):
+            explain = True
+            query = query[: -len("+explain")].strip()
+
+        uc = find_use_case(query)
+        if uc is None:
+            uc = guess_use_case_from_description(query)
+        print_recommendation(uc, explain=explain)
+
+
+# ============================================================
+# ENTRY POINT
+# ============================================================
+
+def main() -> None:
+    parser = argparse.ArgumentParser(
+        description="Recommend an LLM for a given (insurance) use case, with full "
+                     "per-parameter justification available via --explain.",
+    )
+    parser.add_argument("query", nargs="*", help="Use case description (omit for chat mode)")
+    parser.add_argument("--list", action="store_true", help="List all known use cases and exit")
+    parser.add_argument("--models", action="store_true", help="Show the full model table and exit")
+    parser.add_argument("--top", type=int, default=5, help="How many ranked models to show (default 5)")
+    parser.add_argument("--explain", nargs="?", const="__TOP__", default=None, metavar="MODEL",
+                         help="Show full per-parameter justification. With a use case query, "
+                              "explains the top-recommended model. Used alone (or with --models), "
+                              "explains a specific model by name, e.g. --explain 'Claude Sonnet 4.6'.")
+    args = parser.parse_args()
+
+    if args.list:
+        print_use_case_list()
+        return
+
+    if args.explain is not None and not args.query:
+        if args.explain == "__TOP__":
+            print_model_table()
+        else:
+            print_explain_model(args.explain)
+        return
+
+    if args.models:
+        print_model_table()
+        return
+
+    if args.query:
+        query = " ".join(args.query)
+        uc = find_use_case(query) or guess_use_case_from_description(query)
+        explain = args.explain is not None
+        print_recommendation(uc, top_n=args.top, explain=explain)
+        return
+
+    run_chat()
+
+
+if __name__ == "__main__":
+    main()
