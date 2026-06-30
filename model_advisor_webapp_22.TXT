@@ -1,0 +1,1122 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Model Advisor — Which LLM for this job?</title>
+<style>
+  :root{
+    --ink:#161B2E;
+    --ink-soft:#5B6178;
+    --parchment:#F7F4ED;
+    --parchment-dim:#EEEAE0;
+    --panel:#FFFFFF;
+    --line:#DCD6C7;
+    --teal:#0F6E56;
+    --teal-deep:#0A4F3E;
+    --teal-tint:#E3F0EB;
+    --amber:#B8860B;
+    --amber-tint:#F8F0DC;
+    --rust:#993C1D;
+    --rust-tint:#F6E7E0;
+    --mono: "IBM Plex Mono", "SF Mono", Menlo, Consolas, monospace;
+    --serif: "Source Serif 4", "Iowan Old Style", "Georgia", serif;
+    --sans: "Inter", -apple-system, "Segoe UI", sans-serif;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;}
+  body{
+    background:var(--parchment);
+    color:var(--ink);
+    font-family:var(--sans);
+    -webkit-font-smoothing:antialiased;
+    min-height:100vh;
+  }
+  a{color:inherit;}
+
+  /* ===== Layout shell ===== */
+  .wrap{ max-width:1080px; margin:0 auto; padding:0 24px 80px; }
+
+  header.masthead{
+    background:var(--ink);
+    color:var(--parchment);
+    padding:46px 24px 38px;
+    position:relative;
+    overflow:hidden;
+  }
+  header.masthead::before{
+    content:"";
+    position:absolute; top:-60px; right:-60px; width:280px; height:280px;
+    border-radius:50%;
+    background:radial-gradient(circle at 30% 30%, rgba(15,110,86,0.55), transparent 70%);
+  }
+  .masthead-inner{ max-width:1080px; margin:0 auto; position:relative; }
+  .eyebrow{
+    font-family:var(--mono);
+    font-size:11.5px;
+    letter-spacing:0.14em;
+    text-transform:uppercase;
+    color:#9FB6AE;
+    margin:0 0 14px;
+    display:flex; align-items:center; gap:10px;
+  }
+  .eyebrow .dot{ width:6px;height:6px;border-radius:50%;background:var(--teal); display:inline-block; }
+  h1.title{
+    font-family:var(--serif);
+    font-weight:600;
+    font-size:clamp(32px,5vw,46px);
+    line-height:1.08;
+    margin:0 0 14px;
+    max-width:760px;
+  }
+  h1.title em{ font-style:italic; color:#CFE8DD; font-weight:500; }
+  .sub{
+    font-size:16px;
+    color:#C4C9D6;
+    max-width:600px;
+    line-height:1.55;
+    margin:0;
+  }
+  .stat-row{
+    display:flex; gap:28px; margin-top:28px; flex-wrap:wrap;
+  }
+  .stat{ font-family:var(--mono); }
+  .stat .n{ font-size:22px; color:#fff; display:block; line-height:1.1;}
+  .stat .l{ font-size:11px; color:#8E94A8; letter-spacing:.06em; text-transform:uppercase; }
+
+  /* ===== Section labels ===== */
+  .section-label{
+    font-family:var(--mono);
+    font-size:11.5px;
+    letter-spacing:.12em;
+    text-transform:uppercase;
+    color:var(--teal-deep);
+    margin:46px 0 6px;
+    display:flex; align-items:baseline; gap:10px;
+  }
+  .section-label::after{ content:""; flex:1; height:1px; background:var(--line); }
+  h2.section-title{
+    font-family:var(--serif);
+    font-size:24px;
+    font-weight:600;
+    margin:0 0 18px;
+    color:var(--ink);
+  }
+
+  /* ===== Use-case picker ===== */
+  .picker-card{
+    background:var(--panel);
+    border:1px solid var(--line);
+    border-radius:14px;
+    padding:28px;
+    margin-top:18px;
+    box-shadow:0 1px 2px rgba(20,20,10,0.04);
+  }
+  .search-row{ position:relative; }
+  input#queryInput{
+    width:100%;
+    font-family:var(--serif);
+    font-size:19px;
+    padding:14px 16px;
+    border:1.5px solid var(--line);
+    border-radius:10px;
+    background:var(--parchment);
+    color:var(--ink);
+    outline:none;
+    transition:border-color .15s;
+  }
+  input#queryInput:focus{ border-color:var(--teal); background:#fff; }
+  input#queryInput::placeholder{ color:#A9A48F; font-style:italic; }
+
+  .chip-row{ display:flex; flex-wrap:wrap; gap:8px; margin-top:14px; }
+  .chip{
+    font-family:var(--mono);
+    font-size:12px;
+    padding:6px 12px;
+    border-radius:999px;
+    border:1px solid var(--line);
+    background:var(--parchment);
+    cursor:pointer;
+    color:var(--ink-soft);
+    transition:all .12s;
+    white-space:nowrap;
+  }
+  .chip:hover{ border-color:var(--teal); color:var(--teal-deep); background:var(--teal-tint); }
+  .chip.active{ background:var(--ink); color:var(--parchment); border-color:var(--ink); }
+
+  .browse-toggle{
+    font-family:var(--mono);
+    font-size:12px;
+    color:var(--ink-soft);
+    margin-top:14px;
+    cursor:pointer;
+    text-decoration:underline;
+    text-decoration-color:var(--line);
+    display:inline-block;
+  }
+  .usecase-list{
+    display:none;
+    margin-top:16px;
+    border-top:1px solid var(--line);
+    padding-top:16px;
+    max-height:280px;
+    overflow-y:auto;
+  }
+  .usecase-list.open{ display:block; }
+  .usecase-cat{
+    font-family:var(--mono);
+    font-size:10.5px;
+    letter-spacing:.08em;
+    text-transform:uppercase;
+    color:var(--teal-deep);
+    margin:14px 0 6px;
+  }
+  .usecase-cat:first-child{ margin-top:0; }
+  .usecase-item{
+    font-size:13.5px;
+    padding:6px 10px;
+    border-radius:6px;
+    cursor:pointer;
+    color:var(--ink);
+  }
+  .usecase-item:hover{ background:var(--parchment-dim); }
+
+  /* ===== Sliders panel ===== */
+  .sliders-grid{
+    display:grid;
+    grid-template-columns:repeat(2,1fr);
+    gap:22px 28px;
+    margin-top:22px;
+  }
+  @media (max-width:640px){ .sliders-grid{ grid-template-columns:1fr; } }
+  .slider-unit label{
+    display:flex; justify-content:space-between;
+    font-size:13px; color:var(--ink-soft); margin-bottom:8px;
+  }
+  .slider-unit label .val{ font-family:var(--mono); color:var(--teal-deep); font-weight:600;}
+  input[type=range]{
+    width:100%; height:4px; -webkit-appearance:none; appearance:none;
+    background:var(--line); border-radius:2px; outline:none;
+  }
+  input[type=range]::-webkit-slider-thumb{
+    -webkit-appearance:none; width:16px; height:16px; border-radius:50%;
+    background:var(--teal); cursor:pointer; border:2px solid #fff; box-shadow:0 0 0 1px var(--teal);
+  }
+  input[type=range]::-moz-range-thumb{
+    width:16px; height:16px; border-radius:50%; background:var(--teal); cursor:pointer; border:2px solid #fff;
+  }
+  .scale-labels{ display:flex; justify-content:space-between; font-size:10.5px; color:#A9A48F; margin-top:4px;}
+
+  .flags-row{ display:flex; gap:18px; flex-wrap:wrap; margin-top:24px; padding-top:20px; border-top:1px solid var(--line); }
+  .flag-toggle{ display:flex; align-items:center; gap:8px; font-size:13px; color:var(--ink-soft); cursor:pointer; }
+  .flag-toggle input{ width:16px; height:16px; accent-color:var(--teal); cursor:pointer; }
+
+  /* ===== Verdict ===== */
+  .verdict{
+    margin-top:28px;
+    background:var(--ink);
+    color:var(--parchment);
+    border-radius:14px;
+    padding:32px;
+    position:relative;
+    overflow:hidden;
+  }
+  .verdict::before{
+    content:"";
+    position:absolute; bottom:-80px; left:-80px; width:220px; height:220px; border-radius:50%;
+    background:radial-gradient(circle, rgba(15,110,86,0.4), transparent 70%);
+  }
+  .verdict-label{
+    font-family:var(--mono); font-size:11px; letter-spacing:.14em; text-transform:uppercase;
+    color:var(--teal); position:relative;
+  }
+  .verdict-name{
+    font-family:var(--serif); font-size:clamp(26px,4vw,36px); font-weight:600;
+    margin:8px 0 4px; position:relative;
+  }
+  .verdict-vendor{ font-size:14px; color:#A9B3C9; position:relative; }
+  .verdict-meta{
+    display:flex; gap:24px; margin-top:18px; flex-wrap:wrap; position:relative;
+  }
+  .verdict-meta .m{ font-family:var(--mono); }
+  .verdict-meta .m .n{ font-size:16px; color:#fff; display:block; }
+  .verdict-meta .m .l{ font-size:10.5px; color:#8E94A8; text-transform:uppercase; letter-spacing:.05em; }
+  .verdict-note{
+    margin-top:18px; padding-top:18px; border-top:1px solid rgba(255,255,255,0.14);
+    font-size:13.5px; line-height:1.6; color:#C4C9D6; position:relative;
+  }
+  .verdict-note b{ color:#fff; }
+  .verdict-warning{
+    margin-top:14px; background:rgba(184,134,11,0.18); border:1px solid rgba(184,134,11,0.4);
+    border-radius:8px; padding:12px 14px; font-size:13px; color:#F0DDA8; position:relative;
+  }
+
+  /* ===== Ledger (signature element) ===== */
+  .ledger-toggle{
+    margin-top:18px; font-family:var(--mono); font-size:12.5px; color:var(--ink-soft);
+    cursor:pointer; display:inline-flex; align-items:center; gap:6px;
+  }
+  .ledger-toggle .arrow{ transition:transform .15s; display:inline-block; }
+  .ledger-toggle.open .arrow{ transform:rotate(90deg); }
+
+  .ledger{ display:none; margin-top:18px; }
+  .ledger.open{ display:block; }
+  .ledger-row{
+    border:1px solid var(--line); border-radius:10px; background:var(--panel);
+    margin-bottom:10px; overflow:hidden;
+  }
+  .ledger-head{
+    display:flex; justify-content:space-between; align-items:center;
+    padding:13px 16px; cursor:pointer;
+  }
+  .ledger-rank{ font-family:var(--mono); font-size:12px; color:#A9A48F; width:24px; }
+  .ledger-name{ font-weight:600; font-size:14.5px; }
+  .ledger-vendor{ font-size:12px; color:var(--ink-soft); margin-left:8px; }
+  .ledger-score{ font-family:var(--mono); font-size:14px; font-weight:600; }
+  .ledger-score.top{ color:var(--teal-deep); }
+  .ledger-detail{ display:none; padding:0 16px 14px; border-top:1px solid var(--line); }
+  .ledger-detail.open{ display:block; }
+  .ledger-line{
+    display:flex; justify-content:space-between; font-family:var(--mono); font-size:12px;
+    padding:6px 0; border-bottom:1px dashed var(--line);
+  }
+  .ledger-line:last-child{ border-bottom:none; }
+  .ledger-line .why{ color:var(--ink-soft); flex:1; padding-right:12px; }
+  .ledger-line .pts.pos{ color:var(--teal-deep); }
+  .ledger-line .pts.neg{ color:var(--rust); }
+
+  /* ===== Compare table ===== */
+  .compare-wrap{ overflow-x:auto; margin-top:18px; border:1px solid var(--line); border-radius:12px; }
+  table.compare{ width:100%; border-collapse:collapse; font-size:13px; min-width:1280px; }
+  table.compare th{
+    font-family:var(--mono); font-size:11px; letter-spacing:.04em; text-transform:uppercase;
+    background:var(--ink); color:var(--parchment); text-align:left; padding:10px 14px; white-space:nowrap;
+  }
+  table.compare td{ padding:10px 14px; border-bottom:1px solid var(--line); font-family:var(--mono); white-space:nowrap; }
+  table.compare td.name{ font-family:var(--sans); font-weight:600; }
+  table.compare tr:last-child td{ border-bottom:none; }
+  table.compare tr.highlight td{ background:var(--teal-tint); }
+
+  /* ===== Footer ===== */
+  footer{ margin-top:60px; padding-top:24px; border-top:1px solid var(--line); font-size:12px; color:var(--ink-soft); line-height:1.7; }
+  footer a{ text-decoration:underline; }
+
+  .empty-state{ text-align:center; padding:40px 20px; color:var(--ink-soft); font-style:italic; }
+
+  @media (prefers-reduced-motion:reduce){ *{ transition:none !important; animation:none !important; } }
+</style>
+</head>
+<body>
+
+<header class="masthead">
+  <div class="masthead-inner">
+    <p class="eyebrow"><span class="dot"></span>MODEL ADVISOR · CROSS-VENDOR LLM SELECTION</p>
+    <h1 class="title">Which model should you<br><em>actually</em> call for this job?</h1>
+    <p class="sub">Describe a use case, get a ranked recommendation across 20 models from 11 vendors — with the full scoring ledger, not a black box.</p>
+    <div class="stat-row">
+      <div class="stat"><span class="n" id="statModels">—</span><span class="l">Models tracked</span></div>
+      <div class="stat"><span class="n" id="statVendors">—</span><span class="l">Vendors</span></div>
+      <div class="stat"><span class="n" id="statUseCases">—</span><span class="l">Pre-scored use cases</span></div>
+    </div>
+  </div>
+</header>
+
+<div class="wrap">
+
+  <p class="section-label">01 — Describe the job</p>
+  <div class="picker-card">
+    <div class="search-row">
+      <input id="queryInput" type="text" placeholder="e.g. &ldquo;FNOL triage&rdquo; or &ldquo;summarize a 200-page commercial submission&rdquo;" autocomplete="off">
+    </div>
+    <div class="chip-row" id="presetChips"></div>
+    <span class="browse-toggle" id="browseToggle">Browse all 37 use cases by category →</span>
+    <div class="usecase-list" id="usecaseList"></div>
+  </div>
+
+  <p class="section-label">02 — Or set the profile yourself</p>
+  <div class="picker-card">
+    <div class="sliders-grid">
+      <div class="slider-unit">
+        <label>Task complexity <span class="val" id="vComplexity">3</span></label>
+        <input type="range" id="sComplexity" min="1" max="5" value="3">
+        <div class="scale-labels"><span>Simple lookup</span><span>Deep reasoning</span></div>
+      </div>
+      <div class="slider-unit">
+        <label>Latency sensitivity <span class="val" id="vLatency">3</span></label>
+        <input type="range" id="sLatency" min="1" max="5" value="3">
+        <div class="scale-labels"><span>Batch is fine</span><span>Real-time</span></div>
+      </div>
+      <div class="slider-unit">
+        <label>Monthly volume <span class="val" id="vVolume">3</span></label>
+        <input type="range" id="sVolume" min="1" max="5" value="3">
+        <div class="scale-labels"><span>10K calls</span><span>50M+ calls</span></div>
+      </div>
+      <div class="slider-unit">
+        <label>Context needed <span class="val" id="vContext">2</span></label>
+        <input type="range" id="sContext" min="1" max="5" value="2">
+        <div class="scale-labels"><span>&lt;8K tokens</span><span>2M+ tokens</span></div>
+      </div>
+    </div>
+    <div class="flags-row">
+      <label class="flag-toggle"><input type="checkbox" id="fRegulated"> Regulated / auditable</label>
+      <label class="flag-toggle"><input type="checkbox" id="fVision"> Has images / scans (OCR)</label>
+      <label class="flag-toggle"><input type="checkbox" id="fAudio"> Needs native audio input</label>
+      <label class="flag-toggle"><input type="checkbox" id="fVideo"> Needs native video input</label>
+      <label class="flag-toggle"><input type="checkbox" id="fImageGen"> Needs image generation</label>
+      <label class="flag-toggle"><input type="checkbox" id="fOpenWeight"> Needs open weights / self-hosting</label>
+    </div>
+  </div>
+
+  <p class="section-label">03 — Verdict</p>
+  <div id="verdictArea"></div>
+
+  <p class="section-label">04 — PTU vs. pay-as-you-go (Azure)</p>
+  <h2 class="section-title">Is reserved capacity worth it?</h2>
+  <div class="picker-card">
+    <p style="font-size:13.5px; color:var(--ink-soft); margin-top:0; line-height:1.6;">
+      Azure Provisioned Throughput (PTU) reserves capacity billed hourly, regardless of usage —
+      a different model from per-token pricing. None of the PTU-specific numbers below are universal;
+      Azure doesn't publish one figure that fits every model and workload. Every field here is yours to set.
+    </p>
+    <div class="sliders-grid" style="margin-top:8px;">
+      <div class="slider-unit">
+        <label>Model</label>
+        <select id="ptuModel" style="width:100%; padding:10px 12px; border:1.5px solid var(--line); border-radius:8px; background:var(--parchment); font-family:var(--sans); font-size:14px;"></select>
+      </div>
+      <div class="slider-unit">
+        <label>Also compare (optional — hold Ctrl/Cmd to select multiple)</label>
+        <select id="ptuCompareModels" multiple size="4" style="width:100%; padding:6px; border:1.5px solid var(--line); border-radius:8px; background:var(--parchment); font-family:var(--sans); font-size:13px;"></select>
+      </div>
+      <div class="slider-unit">
+        <label>Billing commitment</label>
+        <select id="ptuBilling" style="width:100%; padding:10px 12px; border:1.5px solid var(--line); border-radius:8px; background:var(--parchment); font-family:var(--sans); font-size:14px;">
+          <option value="hourly">Hourly (~$3.35/PTU/hr default)</option>
+          <option value="monthly_reservation">Monthly reservation (~$2.02/PTU/hr default)</option>
+          <option value="annual_reservation">Annual reservation (~$1.31/PTU/hr default)</option>
+        </select>
+      </div>
+      <div class="slider-unit">
+        <label>PTUs available / priced out</label>
+        <input type="number" id="ptuPtus" value="10" min="0" step="1" style="width:100%; padding:10px 12px; border:1.5px solid var(--line); border-radius:8px; background:var(--parchment); font-family:var(--mono); font-size:14px;">
+      </div>
+      <div class="slider-unit">
+        <label>$ per PTU per hour <span style="font-style:italic; color:#A9A48F;">(blank = default)</span></label>
+        <input type="number" id="ptuCost" placeholder="3.35" min="0" step="0.01" style="width:100%; padding:10px 12px; border:1.5px solid var(--line); border-radius:8px; background:var(--parchment); font-family:var(--mono); font-size:14px;">
+      </div>
+      <div class="slider-unit">
+        <label>Tokens/min per PTU <span style="font-style:italic; color:#A9A48F;">(blank = default)</span></label>
+        <input type="number" id="ptuTpm" placeholder="2500" min="0" step="1" style="width:100%; padding:10px 12px; border:1.5px solid var(--line); border-radius:8px; background:var(--parchment); font-family:var(--mono); font-size:14px;">
+      </div>
+      <div class="slider-unit">
+        <label>Output-token capacity weight <span style="font-style:italic; color:#A9A48F;">(blank = default)</span></label>
+        <input type="number" id="ptuWeight" placeholder="4.00" min="0" step="0.1" style="width:100%; padding:10px 12px; border:1.5px solid var(--line); border-radius:8px; background:var(--parchment); font-family:var(--mono); font-size:14px;">
+      </div>
+      <!-- Volume source toggle -->
+      <div class="slider-unit" style="grid-column:1/-1;">
+        <label>Volume input mode</label>
+        <div style="display:flex; gap:8px; margin-top:4px;">
+          <button id="ptuModeTokens" onclick="setPtuMode('tokens')" style="flex:1; padding:8px; border-radius:6px; border:1.5px solid var(--ink); background:var(--ink); color:var(--parchment); cursor:pointer; font-family:var(--sans); font-size:13px;">Monthly token counts</button>
+          <button id="ptuModeDocs" onclick="setPtuMode('docs')" style="flex:1; padding:8px; border-radius:6px; border:1.5px solid var(--line); background:transparent; color:var(--ink); cursor:pointer; font-family:var(--sans); font-size:13px;">From document stats</button>
+        </div>
+      </div>
+      <!-- Token mode inputs -->
+      <div id="ptuTokenInputs" class="slider-unit" style="grid-column:1/-1; display:grid; grid-template-columns:1fr 1fr; gap:16px;">
+        <div class="slider-unit">
+          <label>Expected monthly INPUT tokens</label>
+          <input type="number" id="ptuMonthlyIn" value="60000000" min="0" step="1000000" style="width:100%; padding:10px 12px; border:1.5px solid var(--line); border-radius:8px; background:var(--parchment); font-family:var(--mono); font-size:14px;">
+        </div>
+        <div class="slider-unit">
+          <label>Expected monthly OUTPUT tokens</label>
+          <input type="number" id="ptuMonthlyOut" value="40000000" min="0" step="1000000" style="width:100%; padding:10px 12px; border:1.5px solid var(--line); border-radius:8px; background:var(--parchment); font-family:var(--mono); font-size:14px;">
+        </div>
+      </div>
+      <!-- Document stats mode inputs -->
+      <div id="ptuDocInputs" class="slider-unit" style="grid-column:1/-1; display:none; grid-template-columns:1fr 1fr; gap:16px;">
+        <div class="slider-unit">
+          <label>Submissions / cases per year</label>
+          <input type="number" id="ptuSubs" value="8000" min="0" step="100" style="width:100%; padding:10px 12px; border:1.5px solid var(--line); border-radius:8px; background:var(--parchment); font-family:var(--mono); font-size:14px;">
+        </div>
+        <div class="slider-unit">
+          <label>Forms per submission</label>
+          <input type="number" id="ptuForms" value="30" min="1" step="1" style="width:100%; padding:10px 12px; border:1.5px solid var(--line); border-radius:8px; background:var(--parchment); font-family:var(--mono); font-size:14px;">
+        </div>
+        <div class="slider-unit">
+          <label>Pages per form</label>
+          <input type="number" id="ptuPages" value="5" min="1" step="1" style="width:100%; padding:10px 12px; border:1.5px solid var(--line); border-radius:8px; background:var(--parchment); font-family:var(--mono); font-size:14px;">
+        </div>
+        <div class="slider-unit">
+          <label>Tokens per page</label>
+          <input type="number" id="ptuTpp" value="800" min="100" step="100" style="width:100%; padding:10px 12px; border:1.5px solid var(--line); border-radius:8px; background:var(--parchment); font-family:var(--mono); font-size:14px;">
+        </div>
+        <div class="slider-unit" style="grid-column:1/-1;">
+          <label>Output:input ratio (1.0 = equal in/out; 0.2 = extraction only)</label>
+          <input type="number" id="ptuIoRatio" value="1.0" min="0.01" max="5" step="0.1" style="width:100%; padding:10px 12px; border:1.5px solid var(--line); border-radius:8px; background:var(--parchment); font-family:var(--mono); font-size:14px;">
+        </div>
+        <div id="ptuDocDerivation" style="grid-column:1/-1; padding:12px 16px; background:#f6f5f1; border-radius:8px; font-family:var(--mono); font-size:12px; color:#555; display:none; white-space:pre;"></div>
+      </div>
+    </div>
+    <div id="ptuResult" style="margin-top:22px;"></div>
+  </div>
+
+  <p class="section-label">05 — All 20 models, side by side</p>
+  <h2 class="section-title">Full comparison table</h2>
+  <div class="compare-wrap">
+    <table class="compare" id="compareTable"></table>
+  </div>
+
+  <footer>
+    <p>Pricing and Intelligence Index figures from each vendor's API pricing pages and Artificial Analysis (accessed June 2026). Treat this as a snapshot, not a permanent ranking — model pricing and benchmarks change frequently. Recommendations are a starting hypothesis from published data, not a controlled evaluation on your own documents; validate before a procurement decision.</p>
+    <p>PTU figures (cost/hour, tokens-per-minute-per-PTU, output-token capacity weight) are configurable planning estimates, not vendor quotes — verify with Azure's own capacity calculator and your account team before committing budget.</p>
+    <p>Companion to <em>model_advisor.py</em> and the Cross-Vendor Model Comparison deck. Same scoring logic, three formats.</p>
+  </footer>
+
+</div>
+
+<script>
+const ADVISOR_DATA = {"models":[{"name":"Claude Haiku 4.5","vendor":"Anthropic","input_price":1.0,"output_price":5.0,"cache_hit_price":0.1,"blended_price":0.77,"context":200000,"intelligence":30,"speed":120,"ttft":0.8,"knowledge_cutoff":"February 2025","release_date":"October 15, 2025","eval_cost":null,"reasoning":false,"vision":true,"open_weight":false,"ocr_accuracy":null,"audio_input":false,"video_input":false,"image_gen":false,"notes":"Fastest, cheapest current Claude tier; oldest cutoff in the lineup. Image input only — no native audio or video.","justifications":{"intelligence":"30 on Artificial Analysis Intelligence Index — modest by design; Anthropic positions Haiku as 'near-frontier' for its tier, optimized for volume over depth.","speed":"Output tokens/sec once generation has started. Matters for long responses and streaming UX; largely irrelevant for short, latency-insensitive batch jobs.","ttft":"Time-to-first-token: how long before any output appears. This is what users actually feel as 'slow' in a chat UI, distinct from total throughput.","input_price":"Cost per 1M input tokens. Dominates total spend for long-context, document-heavy, or RAG-style workloads where input >> output.","output_price":"Cost per 1M output tokens, typically 4-8x the input price across vendors. Dominates total spend for generation-heavy workloads (long-form drafting, code generation, reasoning traces).","blended_price":"Weighted 7:2:1 cache-hit:input:output blend (Artificial Analysis convention), approximating realistic production traffic where most tokens are repeated system prompts/context rather than fresh input.","cache_hit_price":"Cost for tokens served from a prompt cache instead of reprocessed fresh. Matters enormously for high-volume apps with a stable system prompt or repeated document context; some vendors discount this 90%+.","context":"Maximum combined input+output tokens in one request. A hard filter for any task involving long documents, treaties, or full claim packets that don't fit in a smaller window — no amount of prompt engineering fixes this.","knowledge_cutoff":"February 2025 — the oldest cutoff in the current Claude lineup, since Haiku 4.5 predates Sonnet 4.6 and Opus 4.7/4.8 by several months.","release_date":"Generally available October 15, 2025 — roughly four months before the Sonnet/Opus 4.6 generation, making it the most battle-tested model in the current lineup.","eval_cost":"Dollar cost to run the full Artificial Analysis Intelligence Index suite once. A rough proxy for what the model costs on heavy reasoning workloads in production, not just its per-token list price.","open_weight":"Whether model weights can be downloaded and self-hosted. Required for strict data-residency rules, air-gapped environments, or avoiding per-token vendor billing at extreme volume.","vision":"Native multimodal input support (images/PDFs). A hard requirement for OCR, scanned-document, or imagery-based use cases — text-only models can't help here.","audio_input":"Native audio understanding — the model directly processes sound (tone, speaker changes, non-speech audio), not just a bolted-on transcription step. Most vendors here do not offer this on their core text/reasoning model.","video_input":"Native video understanding — the model processes video frames/motion directly in one call, rather than requiring you to pre-extract and caption frames yourself. A hard requirement for video-based inspection or analysis use cases.","image_gen":"Whether the vendor offers image generation in the same ecosystem (often a separate sibling model, not the chat/reasoning model itself). Relevant for marketing or document-mockup use cases, not a substitute for vision *input*."}},{"name":"Claude Sonnet 4.6","vendor":"Anthropic","input_price":3.0,"output_price":15.0,"cache_hit_price":0.3,"blended_price":2.31,"context":1000000,"intelligence":42,"speed":90,"ttft":1.5,"knowledge_cutoff":"August 2025","release_date":"February 17, 2026","eval_cost":null,"reasoning":true,"vision":true,"open_weight":false,"ocr_accuracy":95.2,"audio_input":false,"video_input":false,"image_gen":false,"notes":"Production default for most Claude workloads; near-Opus coding/document quality at 40% lower cost. Image input only.","justifications":{"intelligence":"42 on Artificial Analysis Intelligence Index — independent trackers report Sonnet 4.6 matching ~98% of Opus-tier coding/computer-use performance at 40% lower cost.","speed":"Output tokens/sec once generation has started. Matters for long responses and streaming UX; largely irrelevant for short, latency-insensitive batch jobs.","ttft":"Time-to-first-token: how long before any output appears. This is what users actually feel as 'slow' in a chat UI, distinct from total throughput.","input_price":"Cost per 1M input tokens. Dominates total spend for long-context, document-heavy, or RAG-style workloads where input >> output.","output_price":"Cost per 1M output tokens, typically 4-8x the input price across vendors. Dominates total spend for generation-heavy workloads (long-form drafting, code generation, reasoning traces).","blended_price":"Weighted 7:2:1 cache-hit:input:output blend (Artificial Analysis convention), approximating realistic production traffic where most tokens are repeated system prompts/context rather than fresh input.","cache_hit_price":"Cost for tokens served from a prompt cache instead of reprocessed fresh. Matters enormously for high-volume apps with a stable system prompt or repeated document context; some vendors discount this 90%+.","context":"1M-token context window in beta, matching Opus tier as of the 4.6 generation — the long-context premium that used to justify paying for Opus is gone for this axis.","knowledge_cutoff":"August 2025 — newer than Haiku 4.5 (Feb 2025), older than Opus 4.7/4.8 (Jan 2026).","release_date":"Generally available February 17, 2026, about two weeks after Opus 4.6.","eval_cost":"Dollar cost to run the full Artificial Analysis Intelligence Index suite once. A rough proxy for what the model costs on heavy reasoning workloads in production, not just its per-token list price.","open_weight":"Whether model weights can be downloaded and self-hosted. Required for strict data-residency rules, air-gapped environments, or avoiding per-token vendor billing at extreme volume.","vision":"Native multimodal input support (images/PDFs). A hard requirement for OCR, scanned-document, or imagery-based use cases — text-only models can't help here.","audio_input":"Native audio understanding — the model directly processes sound (tone, speaker changes, non-speech audio), not just a bolted-on transcription step. Most vendors here do not offer this on their core text/reasoning model.","video_input":"Native video understanding — the model processes video frames/motion directly in one call, rather than requiring you to pre-extract and caption frames yourself. A hard requirement for video-based inspection or analysis use cases.","image_gen":"Whether the vendor offers image generation in the same ecosystem (often a separate sibling model, not the chat/reasoning model itself). Relevant for marketing or document-mockup use cases, not a substitute for vision *input*."}},{"name":"Claude Opus 4.7","vendor":"Anthropic","input_price":5.0,"output_price":25.0,"cache_hit_price":0.5,"blended_price":3.85,"context":1000000,"intelligence":54,"speed":50,"ttft":13.3,"knowledge_cutoff":"January 2026","release_date":"April 16, 2026","eval_cost":3737.82,"reasoning":true,"vision":true,"open_weight":false,"ocr_accuracy":null,"audio_input":false,"video_input":false,"image_gen":false,"notes":"Anthropic's highest-capability generally-available model at evaluation time; superseded by Opus 4.8 at the same price. Image input only.","justifications":{"intelligence":"54 on Artificial Analysis Intelligence Index, well above the 29-model average; Anthropic's most capable generally-available model at time of evaluation.","speed":"~50 output tokens/sec — notably slow for its price tier per Artificial Analysis; Opus trades raw throughput for reasoning depth, so pair with async workflows.","ttft":"~13.3s average time-to-first-token at max effort — the tradeoff for top-tier reasoning; not a fit for real-time chat without a lower-effort setting.","input_price":"Cost per 1M input tokens. Dominates total spend for long-context, document-heavy, or RAG-style workloads where input >> output.","output_price":"Cost per 1M output tokens, typically 4-8x the input price across vendors. Dominates total spend for generation-heavy workloads (long-form drafting, code generation, reasoning traces).","blended_price":"Weighted 7:2:1 cache-hit:input:output blend (Artificial Analysis convention), approximating realistic production traffic where most tokens are repeated system prompts/context rather than fresh input.","cache_hit_price":"Cost for tokens served from a prompt cache instead of reprocessed fresh. Matters enormously for high-volume apps with a stable system prompt or repeated document context; some vendors discount this 90%+.","context":"Maximum combined input+output tokens in one request. A hard filter for any task involving long documents, treaties, or full claim packets that don't fit in a smaller window — no amount of prompt engineering fixes this.","knowledge_cutoff":"January 2026 — the most recent cutoff in the Claude lineup at evaluation time.","release_date":"Released April 16, 2026. Note: Anthropic has since shipped Opus 4.8 as the current flagship (same $5/$25 pricing); 4.7 remains documented but is no longer the newest tier.","eval_cost":"$3,737.82 to run the full Intelligence Index suite — the most expensive eval run among Claude models, reflecting both price and Opus's verbose reasoning traces.","open_weight":"Whether model weights can be downloaded and self-hosted. Required for strict data-residency rules, air-gapped environments, or avoiding per-token vendor billing at extreme volume.","vision":"Native multimodal input support (images/PDFs). A hard requirement for OCR, scanned-document, or imagery-based use cases — text-only models can't help here.","audio_input":"Native audio understanding — the model directly processes sound (tone, speaker changes, non-speech audio), not just a bolted-on transcription step. Most vendors here do not offer this on their core text/reasoning model.","video_input":"Native video understanding — the model processes video frames/motion directly in one call, rather than requiring you to pre-extract and caption frames yourself. A hard requirement for video-based inspection or analysis use cases.","image_gen":"Whether the vendor offers image generation in the same ecosystem (often a separate sibling model, not the chat/reasoning model itself). Relevant for marketing or document-mockup use cases, not a substitute for vision *input*."}},{"name":"GPT-5.4 mini","vendor":"OpenAI","input_price":0.75,"output_price":4.5,"cache_hit_price":0.075,"blended_price":0.653,"context":400000,"intelligence":40,"speed":155,"ttft":0.66,"knowledge_cutoff":"August 2025 (est., family-aligned)","release_date":"March 2026","eval_cost":null,"reasoning":true,"vision":true,"open_weight":false,"ocr_accuracy":null,"audio_input":false,"video_input":false,"image_gen":true,"notes":"Practical default for most enterprise GPT workloads; beats prior-gen GPT-5 mini at the same price. Image generation via tool call (DALL-E), not native understanding of audio/video.","justifications":{"intelligence":"40 on Artificial Analysis Intelligence Index, above the ~29 all-model average — outperforms the prior-generation GPT-5 mini (33) at the same price point.","speed":"Output tokens/sec once generation has started. Matters for long responses and streaming UX; largely irrelevant for short, latency-insensitive batch jobs.","ttft":"Time-to-first-token: how long before any output appears. This is what users actually feel as 'slow' in a chat UI, distinct from total throughput.","input_price":"Cost per 1M input tokens. Dominates total spend for long-context, document-heavy, or RAG-style workloads where input >> output.","output_price":"Cost per 1M output tokens, typically 4-8x the input price across vendors. Dominates total spend for generation-heavy workloads (long-form drafting, code generation, reasoning traces).","blended_price":"Weighted 7:2:1 cache-hit:input:output blend (Artificial Analysis convention), approximating realistic production traffic where most tokens are repeated system prompts/context rather than fresh input.","cache_hit_price":"Cost for tokens served from a prompt cache instead of reprocessed fresh. Matters enormously for high-volume apps with a stable system prompt or repeated document context; some vendors discount this 90%+.","context":"Maximum combined input+output tokens in one request. A hard filter for any task involving long documents, treaties, or full claim packets that don't fit in a smaller window — no amount of prompt engineering fixes this.","knowledge_cutoff":"Date through which the model's training data is most reliable. Matters for any question about recent events, current regulations, or anything that changed after this date — the model will not know.","release_date":"When the model became generally available. Newer isn't automatically better for your task, but it indicates how battle-tested the model is in production and how soon it's likely to be deprecated.","eval_cost":"Dollar cost to run the full Artificial Analysis Intelligence Index suite once. A rough proxy for what the model costs on heavy reasoning workloads in production, not just its per-token list price.","open_weight":"Whether model weights can be downloaded and self-hosted. Required for strict data-residency rules, air-gapped environments, or avoiding per-token vendor billing at extreme volume.","vision":"Native multimodal input support (images/PDFs). A hard requirement for OCR, scanned-document, or imagery-based use cases — text-only models can't help here.","audio_input":"Native audio understanding — the model directly processes sound (tone, speaker changes, non-speech audio), not just a bolted-on transcription step. Most vendors here do not offer this on their core text/reasoning model.","video_input":"Native video understanding — the model processes video frames/motion directly in one call, rather than requiring you to pre-extract and caption frames yourself. A hard requirement for video-based inspection or analysis use cases.","image_gen":"Whether the vendor offers image generation in the same ecosystem (often a separate sibling model, not the chat/reasoning model itself). Relevant for marketing or document-mockup use cases, not a substitute for vision *input*."}},{"name":"GPT-4.1","vendor":"OpenAI","input_price":2.0,"output_price":8.0,"cache_hit_price":0.5,"blended_price":1.55,"context":1000000,"intelligence":33,"speed":85,"ttft":0.7,"knowledge_cutoff":"June 2024","release_date":"April 14, 2025","eval_cost":null,"reasoning":false,"vision":true,"open_weight":false,"ocr_accuracy":null,"audio_input":false,"video_input":false,"image_gen":true,"notes":"Prior-generation GPT-4 class flagship; still widely deployed in Azure enterprise agreements. Image input + DALL-E generation; no native audio/video. June 2024 knowledge cutoff is a real limitation for recent-data tasks.","justifications":{"intelligence":"33 on Artificial Analysis Intelligence Index — prior-generation GPT-4 class, below GPT-5.4 mini (40) and GPT-5.4 (51). Still competitive for many enterprise workloads, especially where Azure EA agreements include this model.","context":"1M-token context window — matches Claude Sonnet/Opus and is larger than GPT-5.4 mini (400K), making GPT-4.1 viable for long-document tasks despite its older generation.","knowledge_cutoff":"June 2024 — a real limitation: anything that happened in the 12+ months since (regulatory changes, market events, product launches) is outside this model’s knowledge. For insurance workflows touching recent regulations, verify carefully.","release_date":"Released April 14, 2025. Widely deployed in enterprise Azure agreements signed through 2025; likely to be phased out in favour of GPT-5.4 as EA renewals come up.","speed":"Output tokens/sec once generation has started. Matters for long responses and streaming UX; largely irrelevant for short, latency-insensitive batch jobs.","ttft":"Time-to-first-token: how long before any output appears. This is what users actually feel as 'slow' in a chat UI, distinct from total throughput.","input_price":"Cost per 1M input tokens. Dominates total spend for long-context, document-heavy, or RAG-style workloads where input >> output.","output_price":"Cost per 1M output tokens, typically 4-8x the input price across vendors. Dominates total spend for generation-heavy workloads (long-form drafting, code generation, reasoning traces).","blended_price":"Weighted 7:2:1 cache-hit:input:output blend (Artificial Analysis convention), approximating realistic production traffic where most tokens are repeated system prompts/context rather than fresh input.","cache_hit_price":"Cost for tokens served from a prompt cache instead of reprocessed fresh. Matters enormously for high-volume apps with a stable system prompt or repeated document context; some vendors discount this 90%+.","eval_cost":"Dollar cost to run the full Artificial Analysis Intelligence Index suite once. A rough proxy for what the model costs on heavy reasoning workloads in production, not just its per-token list price.","open_weight":"Whether model weights can be downloaded and self-hosted. Required for strict data-residency rules, air-gapped environments, or avoiding per-token vendor billing at extreme volume.","vision":"Native multimodal input support (images/PDFs). A hard requirement for OCR, scanned-document, or imagery-based use cases — text-only models can't help here.","audio_input":"Native audio understanding — the model directly processes sound (tone, speaker changes, non-speech audio), not just a bolted-on transcription step. Most vendors here do not offer this on their core text/reasoning model.","video_input":"Native video understanding — the model processes video frames/motion directly in one call, rather than requiring you to pre-extract and caption frames yourself. A hard requirement for video-based inspection or analysis use cases.","image_gen":"Whether the vendor offers image generation in the same ecosystem (often a separate sibling model, not the chat/reasoning model itself). Relevant for marketing or document-mockup use cases, not a substitute for vision *input*."}},{"name":"GPT-5.4","vendor":"OpenAI","input_price":2.5,"output_price":15.0,"cache_hit_price":0.25,"blended_price":2.175,"context":1100000,"intelligence":51,"speed":166,"ttft":2.5,"knowledge_cutoff":"August 31, 2025","release_date":"March 5, 2026","eval_cost":2131.77,"reasoning":true,"vision":true,"open_weight":false,"ocr_accuracy":91.8,"audio_input":false,"video_input":false,"image_gen":true,"notes":"OpenAI's frontier model for complex professional work; largest GPT-5.4-family context window. No native audio/video understanding.","justifications":{"intelligence":"51 on Artificial Analysis Intelligence Index. OpenAI's own GDPval figure (83%) uses a different methodology; treat the two scores as non-comparable.","speed":"166 output tokens/sec at default effort — among the fastest models in its Intelligence-Index bracket, per Artificial Analysis.","ttft":"Time-to-first-token: how long before any output appears. This is what users actually feel as 'slow' in a chat UI, distinct from total throughput.","input_price":"Cost per 1M input tokens. Dominates total spend for long-context, document-heavy, or RAG-style workloads where input >> output.","output_price":"Cost per 1M output tokens, typically 4-8x the input price across vendors. Dominates total spend for generation-heavy workloads (long-form drafting, code generation, reasoning traces).","blended_price":"Weighted 7:2:1 cache-hit:input:output blend (Artificial Analysis convention), approximating realistic production traffic where most tokens are repeated system prompts/context rather than fresh input.","cache_hit_price":"Cost for tokens served from a prompt cache instead of reprocessed fresh. Matters enormously for high-volume apps with a stable system prompt or repeated document context; some vendors discount this 90%+.","context":"1.1M-token context window, the largest in the GPT-5.4 family, shared with GPT-5.5.","knowledge_cutoff":"August 31, 2025, per OpenAI/Artificial Analysis documentation.","release_date":"Released March 5, 2026 as OpenAI's frontier model for complex professional work.","eval_cost":"$2,131.77 to run the Intelligence Index suite at xhigh effort — reasoning effort level materially changes both score and cost; this figure is for the xhigh config.","open_weight":"Whether model weights can be downloaded and self-hosted. Required for strict data-residency rules, air-gapped environments, or avoiding per-token vendor billing at extreme volume.","vision":"Native multimodal input support (images/PDFs). A hard requirement for OCR, scanned-document, or imagery-based use cases — text-only models can't help here.","audio_input":"Native audio understanding — the model directly processes sound (tone, speaker changes, non-speech audio), not just a bolted-on transcription step. Most vendors here do not offer this on their core text/reasoning model.","video_input":"Native video understanding — the model processes video frames/motion directly in one call, rather than requiring you to pre-extract and caption frames yourself. A hard requirement for video-based inspection or analysis use cases.","image_gen":"Whether the vendor offers image generation in the same ecosystem (often a separate sibling model, not the chat/reasoning model itself). Relevant for marketing or document-mockup use cases, not a substitute for vision *input*."}},{"name":"GPT-5.5","vendor":"OpenAI","input_price":5.0,"output_price":30.0,"cache_hit_price":0.5,"blended_price":4.35,"context":1050000,"intelligence":55,"speed":79,"ttft":5.0,"knowledge_cutoff":"December 1, 2025","release_date":"April 23, 2026","eval_cost":null,"reasoning":true,"vision":true,"open_weight":false,"ocr_accuracy":null,"audio_input":false,"video_input":false,"image_gen":true,"notes":"OpenAI's strongest agentic coding model at evaluation time; more token-efficient than GPT-5.4. No native audio/video understanding.","justifications":{"intelligence":"55 on Artificial Analysis Intelligence Index — OpenAI's strongest agentic coding model to date, improving on GPT-5.4 while using fewer tokens per task.","speed":"~79 output tokens/sec — OpenAI states 5.5 matches 5.4's real-world per-token latency despite higher intelligence, though raw throughput differs by reasoning effort.","ttft":"Time-to-first-token: how long before any output appears. This is what users actually feel as 'slow' in a chat UI, distinct from total throughput.","input_price":"Cost per 1M input tokens. Dominates total spend for long-context, document-heavy, or RAG-style workloads where input >> output.","output_price":"$30/M output — the highest output price tracked here; OpenAI frames this as justified by materially higher coding/agentic benchmark scores and token efficiency.","blended_price":"Weighted 7:2:1 cache-hit:input:output blend (Artificial Analysis convention), approximating realistic production traffic where most tokens are repeated system prompts/context rather than fresh input.","cache_hit_price":"Cost for tokens served from a prompt cache instead of reprocessed fresh. Matters enormously for high-volume apps with a stable system prompt or repeated document context; some vendors discount this 90%+.","context":"Maximum combined input+output tokens in one request. A hard filter for any task involving long documents, treaties, or full claim packets that don't fit in a smaller window — no amount of prompt engineering fixes this.","knowledge_cutoff":"December 1, 2025 per OpenAI/LLM-Stats documentation. Note: some users have reported the model self-reporting an inconsistent (much older) cutoff when asked directly — model self-reports of training data are known to be unreliable; the documented spec is the source of record here, not the model's own claim.","release_date":"Released April 23, 2026.","eval_cost":"Dollar cost to run the full Artificial Analysis Intelligence Index suite once. A rough proxy for what the model costs on heavy reasoning workloads in production, not just its per-token list price.","open_weight":"Whether model weights can be downloaded and self-hosted. Required for strict data-residency rules, air-gapped environments, or avoiding per-token vendor billing at extreme volume.","vision":"Native multimodal input support (images/PDFs). A hard requirement for OCR, scanned-document, or imagery-based use cases — text-only models can't help here.","audio_input":"Native audio understanding — the model directly processes sound (tone, speaker changes, non-speech audio), not just a bolted-on transcription step. Most vendors here do not offer this on their core text/reasoning model.","video_input":"Native video understanding — the model processes video frames/motion directly in one call, rather than requiring you to pre-extract and caption frames yourself. A hard requirement for video-based inspection or analysis use cases.","image_gen":"Whether the vendor offers image generation in the same ecosystem (often a separate sibling model, not the chat/reasoning model itself). Relevant for marketing or document-mockup use cases, not a substitute for vision *input*."}},{"name":"Gemini 3.1 Flash-Lite","vendor":"Google","input_price":0.25,"output_price":1.5,"cache_hit_price":0.025,"blended_price":0.218,"context":1000000,"intelligence":25,"speed":359,"ttft":0.5,"knowledge_cutoff":"January 2025","release_date":"March 4, 2026","eval_cost":93.72,"reasoning":true,"vision":true,"open_weight":false,"ocr_accuracy":null,"audio_input":true,"video_input":true,"image_gen":true,"notes":"Fastest model tracked; best value per dollar for high-volume, latency-sensitive production traffic. Genuinely native audio+video input, like Pro.","justifications":{"intelligence":"25 on Artificial Analysis Intelligence Index — above its own price-tier average (16), an unusually strong score for the cheapest model in the lineup.","speed":"359 output tokens/sec — the fastest model in this entire comparison set by a wide margin, ~2.5x faster time-to-first-token than its Gemini 2.5 Flash predecessor.","ttft":"~0.5s — Google specifically engineered this for high-frequency, low-latency production workflows like classification and real-time chat.","input_price":"Cost per 1M input tokens. Dominates total spend for long-context, document-heavy, or RAG-style workloads where input >> output.","output_price":"Cost per 1M output tokens, typically 4-8x the input price across vendors. Dominates total spend for generation-heavy workloads (long-form drafting, code generation, reasoning traces).","blended_price":"Weighted 7:2:1 cache-hit:input:output blend (Artificial Analysis convention), approximating realistic production traffic where most tokens are repeated system prompts/context rather than fresh input.","cache_hit_price":"Cost for tokens served from a prompt cache instead of reprocessed fresh. Matters enormously for high-volume apps with a stable system prompt or repeated document context; some vendors discount this 90%+.","context":"Maximum combined input+output tokens in one request. A hard filter for any task involving long documents, treaties, or full claim packets that don't fit in a smaller window — no amount of prompt engineering fixes this.","knowledge_cutoff":"January 2025, shared across the Gemini 3 model family at evaluation time.","release_date":"Released March 4, 2026; the preview API endpoint is scheduled for discontinuation July 9, 2026 in favor of the stable gemini-3.1-flash-lite endpoint.","eval_cost":"$93.72 to run the Intelligence Index suite — the cheapest eval run in this table, reflecting both low per-token price and notably concise (low-token) responses.","open_weight":"Whether model weights can be downloaded and self-hosted. Required for strict data-residency rules, air-gapped environments, or avoiding per-token vendor billing at extreme volume.","vision":"Native multimodal input support (images/PDFs). A hard requirement for OCR, scanned-document, or imagery-based use cases — text-only models can't help here.","audio_input":"Native audio understanding, inherited from the Gemini 3 family architecture — unusual for a budget tier; most vendors only put multimodal input on flagship models.","video_input":"Native video understanding at the budget tier — a genuine differentiator versus every other low-cost model tracked, which are text/image-only.","image_gen":"Whether the vendor offers image generation in the same ecosystem (often a separate sibling model, not the chat/reasoning model itself). Relevant for marketing or document-mockup use cases, not a substitute for vision *input*."}},{"name":"Gemini 3.1 Pro","vendor":"Google","input_price":2.0,"output_price":12.0,"cache_hit_price":0.2,"blended_price":1.74,"context":2000000,"intelligence":46,"speed":138,"ttft":2.6,"knowledge_cutoff":"January 2025","release_date":"March 2026","eval_cost":815.11,"reasoning":true,"vision":true,"open_weight":false,"ocr_accuracy":null,"audio_input":true,"video_input":true,"image_gen":true,"notes":"Largest proprietary context window tracked; the only model in this table with native audio AND video understanding in the base model.","justifications":{"intelligence":"46 on Artificial Analysis Intelligence Index, well above the ~29 average.","speed":"Output tokens/sec once generation has started. Matters for long responses and streaming UX; largely irrelevant for short, latency-insensitive batch jobs.","ttft":"Time-to-first-token: how long before any output appears. This is what users actually feel as 'slow' in a chat UI, distinct from total throughput.","input_price":"Cost per 1M input tokens. Dominates total spend for long-context, document-heavy, or RAG-style workloads where input >> output.","output_price":"Cost per 1M output tokens, typically 4-8x the input price across vendors. Dominates total spend for generation-heavy workloads (long-form drafting, code generation, reasoning traces).","blended_price":"Weighted 7:2:1 cache-hit:input:output blend (Artificial Analysis convention), approximating realistic production traffic where most tokens are repeated system prompts/context rather than fresh input.","cache_hit_price":"Cost for tokens served from a prompt cache instead of reprocessed fresh. Matters enormously for high-volume apps with a stable system prompt or repeated document context; some vendors discount this 90%+.","context":"2M-token context window — the largest proprietary (non-open-weight) context window tracked here, ahead of Claude and GPT's 1–1.1M windows.","knowledge_cutoff":"January 2025, shared across the Gemini 3 model family.","release_date":"Entered preview in the Gemini 3 family rollout, March 2026.","eval_cost":"$815.11 to run the Intelligence Index suite — mid-pack cost, reflecting Google's relatively concise output token usage (56M tokens vs. ~88M average) on the suite.","open_weight":"Whether model weights can be downloaded and self-hosted. Required for strict data-residency rules, air-gapped environments, or avoiding per-token vendor billing at extreme volume.","vision":"Native multimodal input support (images/PDFs). A hard requirement for OCR, scanned-document, or imagery-based use cases — text-only models can't help here.","audio_input":"Native audio understanding — up to ~8.4 hours of continuous audio in a single prompt per Google's documentation, not a bolted-on transcription step.","video_input":"Native video understanding — up to ~1 hour of video in a single prompt. This, combined with audio, makes Gemini 3.1 Pro the only model in this table that natively understands both in the base chat model.","image_gen":"Image generation/editing is available via a sibling model in the same family (Gemini 3 Pro Image, branded 'Nano Banana Pro'), not natively inside the Gemini 3.1 Pro chat model itself — still a same-vendor, same-API-surface capability."}},{"name":"Llama 4 Scout","vendor":"Meta","input_price":0.08,"output_price":0.3,"cache_hit_price":null,"blended_price":0.102,"context":10000000,"intelligence":14,"speed":140,"ttft":1.0,"knowledge_cutoff":"August 2024","release_date":"April 5, 2026","eval_cost":26.42,"reasoning":false,"vision":true,"open_weight":true,"ocr_accuracy":null,"audio_input":false,"video_input":true,"image_gen":false,"notes":"Largest advertised context window of any model here; effective usable context is materially lower per independent RULER testing. Native image+video input; no audio.","justifications":{"intelligence":"14 on Artificial Analysis Intelligence Index — modest in absolute terms, but above the 13-point average for open-weight models of similar size; Scout trades peak intelligence for an unmatched context window.","speed":"Output tokens/sec once generation has started. Matters for long responses and streaming UX; largely irrelevant for short, latency-insensitive batch jobs.","ttft":"Time-to-first-token: how long before any output appears. This is what users actually feel as 'slow' in a chat UI, distinct from total throughput.","input_price":"Cost per 1M input tokens. Dominates total spend for long-context, document-heavy, or RAG-style workloads where input >> output.","output_price":"Cost per 1M output tokens, typically 4-8x the input price across vendors. Dominates total spend for generation-heavy workloads (long-form drafting, code generation, reasoning traces).","blended_price":"Weighted 7:2:1 cache-hit:input:output blend (Artificial Analysis convention), approximating realistic production traffic where most tokens are repeated system prompts/context rather than fresh input.","cache_hit_price":"Cost for tokens served from a prompt cache instead of reprocessed fresh. Matters enormously for high-volume apps with a stable system prompt or repeated document context; some vendors discount this 90%+.","context":"10M-token advertised context window, the largest of any model tracked here by a wide margin. Caveat: independent RULER benchmarking finds models reliably use only 50-65% of advertised context, so Scout's effective limit is closer to 5-6.5M tokens in practice — test with your real document sizes before relying on the full figure.","knowledge_cutoff":"August 2024 per Artificial Analysis — the oldest cutoff of any model in this table, a real limitation for tasks needing awareness of anything from the last 18+ months.","release_date":"Released April 5, 2026 alongside Llama 4 Maverick, as Meta's first natively multimodal, mixture-of-experts Llama generation.","eval_cost":"$26.42 to run the Intelligence Index suite — among the cheapest eval runs tracked, consistent with its low per-token price.","open_weight":"Downloadable from llama.com and Hugging Face under Meta's Llama 4 license; fits on a single H100 GPU at 17B active parameters (109B total, 16 experts).","vision":"Native multimodal input support (images/PDFs). A hard requirement for OCR, scanned-document, or imagery-based use cases — text-only models can't help here.","audio_input":"No native audio input — this is Maverick's differentiator, not Scout's. Scout handles text, image, and video only.","video_input":"Native video input via Meta's early-fusion multimodal architecture. Unlike Maverick, Scout does not take native audio input.","image_gen":"Whether the vendor offers image generation in the same ecosystem (often a separate sibling model, not the chat/reasoning model itself). Relevant for marketing or document-mockup use cases, not a substitute for vision *input*."}},{"name":"Llama 4 Maverick","vendor":"Meta","input_price":0.27,"output_price":0.85,"cache_hit_price":null,"blended_price":0.328,"context":1000000,"intelligence":14,"speed":110,"ttft":1.2,"knowledge_cutoff":"August 2024","release_date":"April 5, 2026","eval_cost":null,"reasoning":false,"vision":true,"open_weight":true,"ocr_accuracy":null,"audio_input":true,"video_input":true,"image_gen":false,"notes":"Open-weight, self-hostable, MoE architecture (17B active / 400B total, 128 experts); very low per-token cost. Unlike Scout, Maverick also takes native audio input.","justifications":{"intelligence":"Independently measured at 14 on Artificial Analysis Intelligence Index in the same evaluation wave as Scout — both scored lower on multiple-choice evals than Meta's own claimed figures, reportedly because the models inconsistently followed the requested answer-formatting instructions. Treat vendor-reported scores with caution.","speed":"Output tokens/sec once generation has started. Matters for long responses and streaming UX; largely irrelevant for short, latency-insensitive batch jobs.","ttft":"Time-to-first-token: how long before any output appears. This is what users actually feel as 'slow' in a chat UI, distinct from total throughput.","input_price":"Median tracked price ~$0.27/M input across providers — over 10x cheaper than OpenAI's then-leading GPT-4o endpoint at the time Maverick launched.","output_price":"Cost per 1M output tokens, typically 4-8x the input price across vendors. Dominates total spend for generation-heavy workloads (long-form drafting, code generation, reasoning traces).","blended_price":"Weighted 7:2:1 cache-hit:input:output blend (Artificial Analysis convention), approximating realistic production traffic where most tokens are repeated system prompts/context rather than fresh input.","cache_hit_price":"Cost for tokens served from a prompt cache instead of reprocessed fresh. Matters enormously for high-volume apps with a stable system prompt or repeated document context; some vendors discount this 90%+.","context":"1M-token context window — well ahead of most proprietary mid-tier models on a free, self-hostable model, at 17B active / 400B total parameters across 128 experts.","knowledge_cutoff":"Date through which the model's training data is most reliable. Matters for any question about recent events, current regulations, or anything that changed after this date — the model will not know.","release_date":"Released April 5, 2026, alongside Scout.","eval_cost":"Dollar cost to run the full Artificial Analysis Intelligence Index suite once. A rough proxy for what the model costs on heavy reasoning workloads in production, not just its per-token list price.","open_weight":"Whether model weights can be downloaded and self-hosted. Required for strict data-residency rules, air-gapped environments, or avoiding per-token vendor billing at extreme volume.","vision":"Native multimodal input support (images/PDFs). A hard requirement for OCR, scanned-document, or imagery-based use cases — text-only models can't help here.","audio_input":"Native audio input, unlike Scout — Maverick is the broader-multimodal sibling in the Llama 4 pair, taking image, audio, and video alongside text.","video_input":"Native video understanding — the model processes video frames/motion directly in one call, rather than requiring you to pre-extract and caption frames yourself. A hard requirement for video-based inspection or analysis use cases.","image_gen":"Whether the vendor offers image generation in the same ecosystem (often a separate sibling model, not the chat/reasoning model itself). Relevant for marketing or document-mockup use cases, not a substitute for vision *input*."}},{"name":"DeepSeek V3.2","vendor":"DeepSeek","input_price":0.28,"output_price":0.42,"cache_hit_price":0.028,"blended_price":0.118,"context":128000,"intelligence":25,"speed":100,"ttft":1.0,"knowledge_cutoff":"2024-2025 (exact date not separately published by DeepSeek)","release_date":"December 2025","eval_cost":null,"reasoning":false,"vision":false,"open_weight":true,"ocr_accuracy":null,"audio_input":false,"video_input":false,"image_gen":false,"notes":"MIT-licensed; smallest context window in this table; efficient non-reasoning workhorse tier. Text-only — no image, audio, or video input.","justifications":{"intelligence":"Approximately 21-25 on Artificial Analysis Intelligence Index depending on exact variant/date evaluated (reasoning vs. non-reasoning configurations score differently) — above the open-weight non-reasoning average for its size class.","speed":"Output tokens/sec once generation has started. Matters for long responses and streaming UX; largely irrelevant for short, latency-insensitive batch jobs.","ttft":"Time-to-first-token: how long before any output appears. This is what users actually feel as 'slow' in a chat UI, distinct from total throughput.","input_price":"Cost per 1M input tokens. Dominates total spend for long-context, document-heavy, or RAG-style workloads where input >> output.","output_price":"Cost per 1M output tokens, typically 4-8x the input price across vendors. Dominates total spend for generation-heavy workloads (long-form drafting, code generation, reasoning traces).","blended_price":"Weighted 7:2:1 cache-hit:input:output blend (Artificial Analysis convention), approximating realistic production traffic where most tokens are repeated system prompts/context rather than fresh input.","cache_hit_price":"Cost for tokens served from a prompt cache instead of reprocessed fresh. Matters enormously for high-volume apps with a stable system prompt or repeated document context; some vendors discount this 90%+.","context":"Maximum combined input+output tokens in one request. A hard filter for any task involving long documents, treaties, or full claim packets that don't fit in a smaller window — no amount of prompt engineering fixes this.","knowledge_cutoff":"Date through which the model's training data is most reliable. Matters for any question about recent events, current regulations, or anything that changed after this date — the model will not know.","release_date":"DeepSeek V3.2 (and the V3.2 Speciale variant) released in the same wave as Mistral Large 3, early December 2025.","eval_cost":"Dollar cost to run the full Artificial Analysis Intelligence Index suite once. A rough proxy for what the model costs on heavy reasoning workloads in production, not just its per-token list price.","open_weight":"MIT-licensed since March 2025 across the V3 line, including V3.2 — among the most permissive licenses of any frontier-class open-weight model.","vision":"Native multimodal input support (images/PDFs). A hard requirement for OCR, scanned-document, or imagery-based use cases — text-only models can't help here.","audio_input":"Native audio understanding — the model directly processes sound (tone, speaker changes, non-speech audio), not just a bolted-on transcription step. Most vendors here do not offer this on their core text/reasoning model.","video_input":"Native video understanding — the model processes video frames/motion directly in one call, rather than requiring you to pre-extract and caption frames yourself. A hard requirement for video-based inspection or analysis use cases.","image_gen":"Whether the vendor offers image generation in the same ecosystem (often a separate sibling model, not the chat/reasoning model itself). Relevant for marketing or document-mockup use cases, not a substitute for vision *input*."}},{"name":"DeepSeek R1","vendor":"DeepSeek","input_price":0.55,"output_price":2.19,"cache_hit_price":0.14,"blended_price":0.427,"context":64000,"intelligence":40,"speed":90,"ttft":1.8,"knowledge_cutoff":"2024-2025 (exact date not separately published by DeepSeek)","release_date":"January 2025 (original R1); ongoing point releases since","eval_cost":null,"reasoning":true,"vision":false,"open_weight":true,"ocr_accuracy":null,"audio_input":false,"video_input":false,"image_gen":false,"notes":"Reasoning-tuned; historically the lowest-cost route to o1-class reasoning quality; smallest context window here. Text-only.","justifications":{"intelligence":"40 on Artificial Analysis Intelligence Index in the configuration tracked here — reasoning-tuned, and historically positioned as matching o1-class reasoning quality at a small fraction of the price.","speed":"Output tokens/sec once generation has started. Matters for long responses and streaming UX; largely irrelevant for short, latency-insensitive batch jobs.","ttft":"Time-to-first-token: how long before any output appears. This is what users actually feel as 'slow' in a chat UI, distinct from total throughput.","input_price":"Cost per 1M input tokens. Dominates total spend for long-context, document-heavy, or RAG-style workloads where input >> output.","output_price":"$2.19/M output — roughly 1/27th the cost of OpenAI's o1 at comparable reasoning quality at the time of R1's original release, which drove much of its market attention.","blended_price":"Weighted 7:2:1 cache-hit:input:output blend (Artificial Analysis convention), approximating realistic production traffic where most tokens are repeated system prompts/context rather than fresh input.","cache_hit_price":"Cost for tokens served from a prompt cache instead of reprocessed fresh. Matters enormously for high-volume apps with a stable system prompt or repeated document context; some vendors discount this 90%+.","context":"64K-token context window — the smallest in this comparison set; a hard constraint for any long-document use case regardless of R1's reasoning strength elsewhere.","knowledge_cutoff":"Date through which the model's training data is most reliable. Matters for any question about recent events, current regulations, or anything that changed after this date — the model will not know.","release_date":"When the model became generally available. Newer isn't automatically better for your task, but it indicates how battle-tested the model is in production and how soon it's likely to be deprecated.","eval_cost":"Dollar cost to run the full Artificial Analysis Intelligence Index suite once. A rough proxy for what the model costs on heavy reasoning workloads in production, not just its per-token list price.","open_weight":"Whether model weights can be downloaded and self-hosted. Required for strict data-residency rules, air-gapped environments, or avoiding per-token vendor billing at extreme volume.","vision":"Native multimodal input support (images/PDFs). A hard requirement for OCR, scanned-document, or imagery-based use cases — text-only models can't help here.","audio_input":"Native audio understanding — the model directly processes sound (tone, speaker changes, non-speech audio), not just a bolted-on transcription step. Most vendors here do not offer this on their core text/reasoning model.","video_input":"Native video understanding — the model processes video frames/motion directly in one call, rather than requiring you to pre-extract and caption frames yourself. A hard requirement for video-based inspection or analysis use cases.","image_gen":"Whether the vendor offers image generation in the same ecosystem (often a separate sibling model, not the chat/reasoning model itself). Relevant for marketing or document-mockup use cases, not a substitute for vision *input*."}},{"name":"Mistral Large 3","vendor":"Mistral","input_price":0.5,"output_price":1.5,"cache_hit_price":0.05,"blended_price":0.285,"context":256000,"intelligence":32,"speed":95,"ttft":1.1,"knowledge_cutoff":"Mid-2025 (exact date not separately published by Mistral)","release_date":"December 2025","eval_cost":null,"reasoning":false,"vision":false,"open_weight":true,"ocr_accuracy":null,"audio_input":false,"video_input":false,"image_gen":false,"notes":"Apache 2.0 licensed; selective-scale MoE; strong multilingual and long-document performance for self-hosted EU deployments. Text-only.","justifications":{"intelligence":"Scored in the low-30s on Artificial Analysis Intelligence Index in head-to-head comparisons against DeepSeek V3.2 — competitive with, but not class-leading against, similarly-priced open-weight non-reasoning models.","speed":"Output tokens/sec once generation has started. Matters for long responses and streaming UX; largely irrelevant for short, latency-insensitive batch jobs.","ttft":"Time-to-first-token: how long before any output appears. This is what users actually feel as 'slow' in a chat UI, distinct from total throughput.","input_price":"Cost per 1M input tokens. Dominates total spend for long-context, document-heavy, or RAG-style workloads where input >> output.","output_price":"Cost per 1M output tokens, typically 4-8x the input price across vendors. Dominates total spend for generation-heavy workloads (long-form drafting, code generation, reasoning traces).","blended_price":"Weighted 7:2:1 cache-hit:input:output blend (Artificial Analysis convention), approximating realistic production traffic where most tokens are repeated system prompts/context rather than fresh input.","cache_hit_price":"Cost for tokens served from a prompt cache instead of reprocessed fresh. Matters enormously for high-volume apps with a stable system prompt or repeated document context; some vendors discount this 90%+.","context":"256K-token context window — Mistral's headline upgrade for this release, aimed squarely at large log analysis, research synthesis, and document review.","knowledge_cutoff":"Date through which the model's training data is most reliable. Matters for any question about recent events, current regulations, or anything that changed after this date — the model will not know.","release_date":"Released in the same window as DeepSeek V3.2 Speciale, early December 2025.","eval_cost":"Dollar cost to run the full Artificial Analysis Intelligence Index suite once. A rough proxy for what the model costs on heavy reasoning workloads in production, not just its per-token list price.","open_weight":"Released under Apache 2.0, one of the most permissive licenses available, suited to EU/GDPR-sensitive self-hosted deployments.","vision":"Native multimodal input support (images/PDFs). A hard requirement for OCR, scanned-document, or imagery-based use cases — text-only models can't help here.","audio_input":"Native audio understanding — the model directly processes sound (tone, speaker changes, non-speech audio), not just a bolted-on transcription step. Most vendors here do not offer this on their core text/reasoning model.","video_input":"Native video understanding — the model processes video frames/motion directly in one call, rather than requiring you to pre-extract and caption frames yourself. A hard requirement for video-based inspection or analysis use cases.","image_gen":"Whether the vendor offers image generation in the same ecosystem (often a separate sibling model, not the chat/reasoning model itself). Relevant for marketing or document-mockup use cases, not a substitute for vision *input*."}},{"name":"Phi-4","vendor":"Microsoft","input_price":0.13,"output_price":0.5,"cache_hit_price":null,"blended_price":0.167,"context":16000,"intelligence":5,"speed":35,"ttft":2.1,"knowledge_cutoff":"June 2024","release_date":"January 10, 2025","eval_cost":null,"reasoning":false,"vision":false,"open_weight":true,"ocr_accuracy":null,"audio_input":false,"video_input":false,"image_gen":false,"notes":"Small (14B) self-hostable model for narrow STEM/reasoning tasks; smallest context window tracked. Text-only.","justifications":{"intelligence":"5 on Artificial Analysis Intelligence Index — the lowest score in this entire table. Phi-4 is a 14B-parameter small language model, not a frontier competitor; it is included as a reference point for the 'tiny, self-hosted, narrow-task' tier.","speed":"~35 tokens/sec — notably slow for its size class despite being only 14B parameters, per Artificial Analysis's measurement of Microsoft's first-party API.","ttft":"Time-to-first-token: how long before any output appears. This is what users actually feel as 'slow' in a chat UI, distinct from total throughput.","input_price":"Cost per 1M input tokens. Dominates total spend for long-context, document-heavy, or RAG-style workloads where input >> output.","output_price":"Cost per 1M output tokens, typically 4-8x the input price across vendors. Dominates total spend for generation-heavy workloads (long-form drafting, code generation, reasoning traces).","blended_price":"Weighted 7:2:1 cache-hit:input:output blend (Artificial Analysis convention), approximating realistic production traffic where most tokens are repeated system prompts/context rather than fresh input.","cache_hit_price":"Cost for tokens served from a prompt cache instead of reprocessed fresh. Matters enormously for high-volume apps with a stable system prompt or repeated document context; some vendors discount this 90%+.","context":"16K-token context window — by far the smallest tracked here, a hard constraint ruling it out for almost any document-heavy or long-conversation use case.","knowledge_cutoff":"June 2024 — one of the oldest cutoffs in this table alongside Llama 4.","release_date":"Released January 10, 2025 (technical report published December 2024).","eval_cost":"Dollar cost to run the full Artificial Analysis Intelligence Index suite once. A rough proxy for what the model costs on heavy reasoning workloads in production, not just its per-token list price.","open_weight":"MIT-licensed, downloadable from Hugging Face; runs on modest hardware given its 14B parameter count, which is the model's core value proposition.","vision":"Native multimodal input support (images/PDFs). A hard requirement for OCR, scanned-document, or imagery-based use cases — text-only models can't help here.","audio_input":"Native audio understanding — the model directly processes sound (tone, speaker changes, non-speech audio), not just a bolted-on transcription step. Most vendors here do not offer this on their core text/reasoning model.","video_input":"Native video understanding — the model processes video frames/motion directly in one call, rather than requiring you to pre-extract and caption frames yourself. A hard requirement for video-based inspection or analysis use cases.","image_gen":"Whether the vendor offers image generation in the same ecosystem (often a separate sibling model, not the chat/reasoning model itself). Relevant for marketing or document-mockup use cases, not a substitute for vision *input*."}},{"name":"Command A","vendor":"Cohere","input_price":2.5,"output_price":10.0,"cache_hit_price":null,"blended_price":3.25,"context":256000,"intelligence":8,"speed":68,"ttft":1.6,"knowledge_cutoff":"June 1, 2024","release_date":"2025","eval_cost":null,"reasoning":false,"vision":false,"open_weight":true,"ocr_accuracy":null,"audio_input":false,"video_input":false,"image_gen":false,"notes":"Cohere's enterprise RAG/tool-use workhorse; 111B params, requires 2 GPUs to self-host. Text-only — Cohere ships vision/audio as separate models (Command A Vision, Aya Vision, Transcribe), not in Command A itself.","justifications":{"intelligence":"8 on Artificial Analysis Intelligence Index — modest, but above the median (7) for open-weight non-reasoning models of similar size; Cohere optimizes Command A for enterprise RAG and tool-use rather than raw benchmark intelligence.","speed":"~68 tokens/sec, below the ~86 t/s median for its size class — Cohere trades some throughput for the 150% throughput gain it already achieved over Command R+ 08-2024.","ttft":"Time-to-first-token: how long before any output appears. This is what users actually feel as 'slow' in a chat UI, distinct from total throughput.","input_price":"Cost per 1M input tokens. Dominates total spend for long-context, document-heavy, or RAG-style workloads where input >> output.","output_price":"Cost per 1M output tokens, typically 4-8x the input price across vendors. Dominates total spend for generation-heavy workloads (long-form drafting, code generation, reasoning traces).","blended_price":"Weighted 7:2:1 cache-hit:input:output blend (Artificial Analysis convention), approximating realistic production traffic where most tokens are repeated system prompts/context rather than fresh input.","cache_hit_price":"Cost for tokens served from a prompt cache instead of reprocessed fresh. Matters enormously for high-volume apps with a stable system prompt or repeated document context; some vendors discount this 90%+.","context":"256K-token context window tuned specifically for long-document RAG, Cohere's core enterprise use case.","knowledge_cutoff":"June 1, 2024, per Cohere's own documentation.","release_date":"Released 2025 as Cohere's flagship at the time; positioned as 'a modern R+ on the same rate card' — same $2.50/$10 pricing as the prior Command R+ 08-2024 release.","eval_cost":"Dollar cost to run the full Artificial Analysis Intelligence Index suite once. A rough proxy for what the model costs on heavy reasoning workloads in production, not just its per-token list price.","open_weight":"Open weights at 111B parameters, requiring two GPUs (A100s/H100s) to run — self-hostable but not lightweight.","vision":"Native multimodal input support (images/PDFs). A hard requirement for OCR, scanned-document, or imagery-based use cases — text-only models can't help here.","audio_input":"Native audio understanding — the model directly processes sound (tone, speaker changes, non-speech audio), not just a bolted-on transcription step. Most vendors here do not offer this on their core text/reasoning model.","video_input":"Native video understanding — the model processes video frames/motion directly in one call, rather than requiring you to pre-extract and caption frames yourself. A hard requirement for video-based inspection or analysis use cases.","image_gen":"Whether the vendor offers image generation in the same ecosystem (often a separate sibling model, not the chat/reasoning model itself). Relevant for marketing or document-mockup use cases, not a substitute for vision *input*."}},{"name":"Command A+","vendor":"Cohere","input_price":2.5,"output_price":10.0,"cache_hit_price":null,"blended_price":3.25,"context":200000,"intelligence":37,"speed":201,"ttft":0.35,"knowledge_cutoff":"April 1, 2025","release_date":"May 20, 2026","eval_cost":null,"reasoning":true,"vision":true,"open_weight":true,"ocr_accuracy":null,"audio_input":false,"video_input":false,"image_gen":false,"notes":"Cohere's first MoE and first Apache 2.0 frontier model; vision (image) + reasoning + agentic in one model — but no native audio or video.","justifications":{"intelligence":"37 on Artificial Analysis Intelligence Index — Cohere's first reasoning-capable model, a substantial jump over Command A (8) and the highest-scoring Cohere model tracked.","speed":"~201 tokens/sec, well above Command A — driven by Command A+'s MoE architecture (218B total / 25B active parameters) and W4A4 quantization.","ttft":"~0.35s — one of the fastest time-to-first-token figures in this entire table, among the lowest Artificial Analysis tracks across any vendor.","input_price":"Cost per 1M input tokens. Dominates total spend for long-context, document-heavy, or RAG-style workloads where input >> output.","output_price":"Cost per 1M output tokens, typically 4-8x the input price across vendors. Dominates total spend for generation-heavy workloads (long-form drafting, code generation, reasoning traces).","blended_price":"Weighted 7:2:1 cache-hit:input:output blend (Artificial Analysis convention), approximating realistic production traffic where most tokens are repeated system prompts/context rather than fresh input.","cache_hit_price":"Cost for tokens served from a prompt cache instead of reprocessed fresh. Matters enormously for high-volume apps with a stable system prompt or repeated document context; some vendors discount this 90%+.","context":"200K-token context window; Cohere also publishes a 256K figure for the same model family depending on deployment — treat the smaller figure as the conservative spec.","knowledge_cutoff":"April 1, 2025 per Cohere's documentation — newer than Command A's June 2024 cutoff.","release_date":"Released May 20, 2026 — Cohere's first Apache 2.0-licensed frontier model, positioned for 'sovereign critical infrastructure' deployments.","eval_cost":"Dollar cost to run the full Artificial Analysis Intelligence Index suite once. A rough proxy for what the model costs on heavy reasoning workloads in production, not just its per-token list price.","open_weight":"Apache 2.0 licensed, runs on as little as 1x B200 or 2x H100 GPUs thanks to W4A4 lossless quantization — notably lower hardware requirements than Command A.","vision":"Native multimodal input support (images/PDFs). A hard requirement for OCR, scanned-document, or imagery-based use cases — text-only models can't help here.","audio_input":"Native audio understanding — the model directly processes sound (tone, speaker changes, non-speech audio), not just a bolted-on transcription step. Most vendors here do not offer this on their core text/reasoning model.","video_input":"Native video understanding — the model processes video frames/motion directly in one call, rather than requiring you to pre-extract and caption frames yourself. A hard requirement for video-based inspection or analysis use cases.","image_gen":"Whether the vendor offers image generation in the same ecosystem (often a separate sibling model, not the chat/reasoning model itself). Relevant for marketing or document-mockup use cases, not a substitute for vision *input*."}},{"name":"Qwen3.7 Max","vendor":"Alibaba","input_price":2.5,"output_price":7.5,"cache_hit_price":null,"blended_price":3.0,"context":1000000,"intelligence":46,"speed":200,"ttft":2.6,"knowledge_cutoff":"2025 (exact date not separately published by Alibaba)","release_date":"May 19, 2026","eval_cost":null,"reasoning":true,"vision":false,"open_weight":false,"ocr_accuracy":null,"audio_input":false,"video_input":false,"image_gen":false,"notes":"Alibaba's flagship reasoning model; matches Gemini 3.1 Pro's Intelligence Index at unusually high speed. Text-only at the Max tier (smaller Qwen3.5 models do support image/video).","justifications":{"intelligence":"46 on Artificial Analysis Intelligence Index, well above the ~29 average — Alibaba's flagship reasoning model at evaluation time, matching Gemini 3.1 Pro's score.","speed":"200 tokens/sec, well above the ~77 t/s median for reasoning models in its price tier — unusually fast for a model at this intelligence level.","ttft":"Time-to-first-token: how long before any output appears. This is what users actually feel as 'slow' in a chat UI, distinct from total throughput.","input_price":"Cost per 1M input tokens. Dominates total spend for long-context, document-heavy, or RAG-style workloads where input >> output.","output_price":"Cost per 1M output tokens, typically 4-8x the input price across vendors. Dominates total spend for generation-heavy workloads (long-form drafting, code generation, reasoning traces).","blended_price":"Weighted 7:2:1 cache-hit:input:output blend (Artificial Analysis convention), approximating realistic production traffic where most tokens are repeated system prompts/context rather than fresh input.","cache_hit_price":"Cost for tokens served from a prompt cache instead of reprocessed fresh. Matters enormously for high-volume apps with a stable system prompt or repeated document context; some vendors discount this 90%+.","context":"Maximum combined input+output tokens in one request. A hard filter for any task involving long documents, treaties, or full claim packets that don't fit in a smaller window — no amount of prompt engineering fixes this.","knowledge_cutoff":"Not separately published by Alibaba for this exact release; treat as a 2025-era cutoff consistent with the Qwen3 family's general training timeline.","release_date":"Released May 19, 2026.","eval_cost":"Dollar cost to run the full Artificial Analysis Intelligence Index suite once. A rough proxy for what the model costs on heavy reasoning workloads in production, not just its per-token list price.","open_weight":"Proprietary — unlike many smaller Qwen models, the Max tier is not released with open weights.","vision":"Native multimodal input support (images/PDFs). A hard requirement for OCR, scanned-document, or imagery-based use cases — text-only models can't help here.","audio_input":"Native audio understanding — the model directly processes sound (tone, speaker changes, non-speech audio), not just a bolted-on transcription step. Most vendors here do not offer this on their core text/reasoning model.","video_input":"Native video understanding — the model processes video frames/motion directly in one call, rather than requiring you to pre-extract and caption frames yourself. A hard requirement for video-based inspection or analysis use cases.","image_gen":"Whether the vendor offers image generation in the same ecosystem (often a separate sibling model, not the chat/reasoning model itself). Relevant for marketing or document-mockup use cases, not a substitute for vision *input*."}},{"name":"Grok 4.3","vendor":"xAI","input_price":1.25,"output_price":2.5,"cache_hit_price":null,"blended_price":1.375,"context":1000000,"intelligence":38,"speed":139,"ttft":16.6,"knowledge_cutoff":"Not independently confirmed","release_date":"April 30, 2026","eval_cost":null,"reasoning":true,"vision":true,"open_weight":false,"ocr_accuracy":null,"audio_input":false,"video_input":false,"image_gen":true,"notes":"Strong intelligence-to-price ratio, but by far the slowest time-to-first-token tracked here. Image input + image generation (Aurora) in the xAI ecosystem; no native audio/video understanding.","justifications":{"intelligence":"38 on Artificial Analysis Intelligence Index, well above the ~29 average.","speed":"139 tokens/sec once generation starts — above average despite the very slow TTFT.","ttft":"~16.6s at high effort — by far the slowest time-to-first-token in this entire table, an order of magnitude above every other reasoning model tracked. This is a real production constraint for anything latency-sensitive, regardless of its strong throughput once generation starts.","input_price":"Cost per 1M input tokens. Dominates total spend for long-context, document-heavy, or RAG-style workloads where input >> output.","output_price":"$2.50/M output — notably cheap relative to its intelligence tier; most peers scoring in the high-30s charge $8-15/M output.","blended_price":"Weighted 7:2:1 cache-hit:input:output blend (Artificial Analysis convention), approximating realistic production traffic where most tokens are repeated system prompts/context rather than fresh input.","cache_hit_price":"Cost for tokens served from a prompt cache instead of reprocessed fresh. Matters enormously for high-volume apps with a stable system prompt or repeated document context; some vendors discount this 90%+.","context":"Maximum combined input+output tokens in one request. A hard filter for any task involving long documents, treaties, or full claim packets that don't fit in a smaller window — no amount of prompt engineering fixes this.","knowledge_cutoff":"Not independently confirmed at time of writing; xAI does not publish this as clearly as Anthropic, OpenAI, or Google do.","release_date":"Released April 30, 2026.","eval_cost":"Dollar cost to run the full Artificial Analysis Intelligence Index suite once. A rough proxy for what the model costs on heavy reasoning workloads in production, not just its per-token list price.","open_weight":"Proprietary, API-only access via xAI.","vision":"Native multimodal input support (images/PDFs). A hard requirement for OCR, scanned-document, or imagery-based use cases — text-only models can't help here.","audio_input":"Native audio understanding — the model directly processes sound (tone, speaker changes, non-speech audio), not just a bolted-on transcription step. Most vendors here do not offer this on their core text/reasoning model.","video_input":"Native video understanding — the model processes video frames/motion directly in one call, rather than requiring you to pre-extract and caption frames yourself. A hard requirement for video-based inspection or analysis use cases.","image_gen":"Image generation is available via xAI's separate Aurora model in the same ecosystem/app, not natively inside the Grok 4.3 chat model itself."}},{"name":"Nova Pro","vendor":"Amazon","input_price":0.8,"output_price":3.2,"cache_hit_price":null,"blended_price":1.04,"context":300000,"intelligence":13,"speed":75,"ttft":1.5,"knowledge_cutoff":"December 2024","release_date":"December 2024","eval_cost":200.98,"reasoning":false,"vision":true,"open_weight":false,"ocr_accuracy":null,"audio_input":false,"video_input":true,"image_gen":false,"notes":"AWS-native multimodal model; priced and positioned for Bedrock-integrated enterprise workloads, not peak benchmark scores. Native image+video input; voice is a separate sibling model (Nova Sonic), not built into Nova Pro itself.","justifications":{"intelligence":"13 on Artificial Analysis Intelligence Index, below the ~24 average for its class — Amazon positions Nova on price-performance and AWS integration, not peak benchmark scores.","speed":"Output tokens/sec once generation has started. Matters for long responses and streaming UX; largely irrelevant for short, latency-insensitive batch jobs.","ttft":"Time-to-first-token: how long before any output appears. This is what users actually feel as 'slow' in a chat UI, distinct from total throughput.","input_price":"Cost per 1M input tokens. Dominates total spend for long-context, document-heavy, or RAG-style workloads where input >> output.","output_price":"Cost per 1M output tokens, typically 4-8x the input price across vendors. Dominates total spend for generation-heavy workloads (long-form drafting, code generation, reasoning traces).","blended_price":"Weighted 7:2:1 cache-hit:input:output blend (Artificial Analysis convention), approximating realistic production traffic where most tokens are repeated system prompts/context rather than fresh input.","cache_hit_price":"Cost for tokens served from a prompt cache instead of reprocessed fresh. Matters enormously for high-volume apps with a stable system prompt or repeated document context; some vendors discount this 90%+.","context":"300K-token context window with vision input — enough for most financial-document and codebase-analysis workloads Amazon markets it for, though smaller than several rivals at this price point.","knowledge_cutoff":"December 2024, per Amazon's model metadata — also the model's release-adjacent cutoff.","release_date":"Released December 2024 alongside the rest of the original Nova family (Micro, Lite, Pro, Premier).","eval_cost":"$200.98 to run the Intelligence Index suite — mid-pack, reflecting both moderate pricing and relatively concise (4.4M token) responses on the suite.","open_weight":"Proprietary, available only via Amazon Bedrock.","vision":"Native multimodal input support (images/PDFs). A hard requirement for OCR, scanned-document, or imagery-based use cases — text-only models can't help here.","audio_input":"Native audio understanding — the model directly processes sound (tone, speaker changes, non-speech audio), not just a bolted-on transcription step. Most vendors here do not offer this on their core text/reasoning model.","video_input":"Native video input — Amazon markets this explicitly for video understanding and VATEX video-description benchmarks. Voice is handled by a separate sibling model (Nova Sonic) rather than Nova Pro itself.","image_gen":"Whether the vendor offers image generation in the same ecosystem (often a separate sibling model, not the chat/reasoning model itself). Relevant for marketing or document-mockup use cases, not a substitute for vision *input*."}},{"name":"Nova Micro","vendor":"Amazon","input_price":0.04,"output_price":0.14,"cache_hit_price":null,"blended_price":0.05,"context":128000,"intelligence":10,"speed":300,"ttft":0.4,"knowledge_cutoff":"December 2024","release_date":"December 2024","eval_cost":6.38,"reasoning":false,"vision":false,"open_weight":false,"ocr_accuracy":null,"audio_input":false,"video_input":false,"image_gen":false,"notes":"Amazon's lowest-latency, lowest-cost, text-only Nova tier — no image, audio, or video input at all.","justifications":{"intelligence":"10 on Artificial Analysis Intelligence Index, slightly below the ~11 average for its class — Amazon's text-only, lowest-latency, lowest-cost Nova tier.","speed":"~300 tokens/sec — notably fast, consistent with Amazon's positioning of Micro as the lowest-latency model in the Nova family.","ttft":"Time-to-first-token: how long before any output appears. This is what users actually feel as 'slow' in a chat UI, distinct from total throughput.","input_price":"Cost per 1M input tokens. Dominates total spend for long-context, document-heavy, or RAG-style workloads where input >> output.","output_price":"Cost per 1M output tokens, typically 4-8x the input price across vendors. Dominates total spend for generation-heavy workloads (long-form drafting, code generation, reasoning traces).","blended_price":"Weighted 7:2:1 cache-hit:input:output blend (Artificial Analysis convention), approximating realistic production traffic where most tokens are repeated system prompts/context rather than fresh input.","cache_hit_price":"Cost for tokens served from a prompt cache instead of reprocessed fresh. Matters enormously for high-volume apps with a stable system prompt or repeated document context; some vendors discount this 90%+.","context":"Maximum combined input+output tokens in one request. A hard filter for any task involving long documents, treaties, or full claim packets that don't fit in a smaller window — no amount of prompt engineering fixes this.","knowledge_cutoff":"December 2024, aligned with the rest of the original Nova family release.","release_date":"Released December 2024.","eval_cost":"$6.38 to run the Intelligence Index suite — one of the cheapest eval runs in this table, consistent with its sub-$0.15/M pricing.","open_weight":"Proprietary, available only via Amazon Bedrock.","vision":"Text-only — Nova Micro is the one model in the Nova family without image/video input; use Nova Lite or Pro for any multimodal requirement.","audio_input":"Native audio understanding — the model directly processes sound (tone, speaker changes, non-speech audio), not just a bolted-on transcription step. Most vendors here do not offer this on their core text/reasoning model.","video_input":"Native video understanding — the model processes video frames/motion directly in one call, rather than requiring you to pre-extract and caption frames yourself. A hard requirement for video-based inspection or analysis use cases.","image_gen":"Whether the vendor offers image generation in the same ecosystem (often a separate sibling model, not the chat/reasoning model itself). Relevant for marketing or document-mockup use cases, not a substitute for vision *input*."}},{"name":"Gemma 4 E4B","vendor":"Google","input_price":0.04,"output_price":0.08,"cache_hit_price":null,"blended_price":0.044,"context":128000,"intelligence":15,"speed":140,"ttft":0.9,"knowledge_cutoff":"January 2025","release_date":"April 2, 2026","eval_cost":null,"reasoning":false,"vision":true,"open_weight":true,"ocr_accuracy":null,"audio_input":true,"video_input":false,"image_gen":false,"notes":"Google's edge/on-device SLM tier (4.5B effective, ~8B with embeddings); natively takes image+audio input, runs on phones via MediaPipe/LiteRT.","justifications":{"intelligence":"15 on Artificial Analysis Intelligence Index — ahead of Granite 4.1 8B (12) and Llama 3.2 3B (5) at a similar size class, behind Ministral 3 8B (15, tied) and well behind Qwen3.5 9B (32).","speed":"Output tokens/sec once generation has started. Matters for long responses and streaming UX; largely irrelevant for short, latency-insensitive batch jobs.","ttft":"Time-to-first-token: how long before any output appears. This is what users actually feel as 'slow' in a chat UI, distinct from total throughput.","input_price":"Cost per 1M input tokens. Dominates total spend for long-context, document-heavy, or RAG-style workloads where input >> output.","output_price":"Cost per 1M output tokens, typically 4-8x the input price across vendors. Dominates total spend for generation-heavy workloads (long-form drafting, code generation, reasoning traces).","blended_price":"Weighted 7:2:1 cache-hit:input:output blend (Artificial Analysis convention), approximating realistic production traffic where most tokens are repeated system prompts/context rather than fresh input.","cache_hit_price":"Cost for tokens served from a prompt cache instead of reprocessed fresh. Matters enormously for high-volume apps with a stable system prompt or repeated document context; some vendors discount this 90%+.","context":"128K-token context window — the 26B/31B Gemma 4 siblings reach 256K, but the E4B edge tier trades context for running on-device.","knowledge_cutoff":"January 2025, shared across the Gemma 4 family at evaluation time.","release_date":"Released April 2, 2026 alongside the rest of the Gemma 4 family (E2B, 26B A4B, 31B).","eval_cost":"Dollar cost to run the full Artificial Analysis Intelligence Index suite once. A rough proxy for what the model costs on heavy reasoning workloads in production, not just its per-token list price.","open_weight":"Apache 2.0 — Gemma 4 moved off the earlier custom Gemma Terms of Use, which previously complicated enterprise legal review.","vision":"Native multimodal input support (images/PDFs). A hard requirement for OCR, scanned-document, or imagery-based use cases — text-only models can't help here.","audio_input":"Native audio input — unusual at this size; only the E2B/E4B edge tier of Gemma 4 has this, not the larger 26B/31B siblings, which add video instead.","video_input":"Native video understanding — the model processes video frames/motion directly in one call, rather than requiring you to pre-extract and caption frames yourself. A hard requirement for video-based inspection or analysis use cases.","image_gen":"Whether the vendor offers image generation in the same ecosystem (often a separate sibling model, not the chat/reasoning model itself). Relevant for marketing or document-mockup use cases, not a substitute for vision *input*."}},{"name":"Llama 3.2 3B","vendor":"Meta","input_price":0.02,"output_price":0.06,"cache_hit_price":null,"blended_price":0.024,"context":128000,"intelligence":5,"speed":150,"ttft":0.6,"knowledge_cutoff":"December 2023","release_date":"September 25, 2024","eval_cost":null,"reasoning":false,"vision":false,"open_weight":true,"ocr_accuracy":null,"audio_input":false,"video_input":false,"image_gen":false,"notes":"Meta's smallest current edge/mobile tier; widest community fine-tune support of any model in this table, but the oldest cutoff and lowest measured intelligence.","justifications":{"intelligence":"5 on Artificial Analysis Intelligence Index — the lowest score among the SLMs tracked here; this is an older (Sept 2024) generation that Meta has not directly refreshed at this size since.","speed":"Output tokens/sec once generation has started. Matters for long responses and streaming UX; largely irrelevant for short, latency-insensitive batch jobs.","ttft":"Time-to-first-token: how long before any output appears. This is what users actually feel as 'slow' in a chat UI, distinct from total throughput.","input_price":"Cost per 1M input tokens. Dominates total spend for long-context, document-heavy, or RAG-style workloads where input >> output.","output_price":"Cost per 1M output tokens, typically 4-8x the input price across vendors. Dominates total spend for generation-heavy workloads (long-form drafting, code generation, reasoning traces).","blended_price":"Weighted 7:2:1 cache-hit:input:output blend (Artificial Analysis convention), approximating realistic production traffic where most tokens are repeated system prompts/context rather than fresh input.","cache_hit_price":"Cost for tokens served from a prompt cache instead of reprocessed fresh. Matters enormously for high-volume apps with a stable system prompt or repeated document context; some vendors discount this 90%+.","context":"Maximum combined input+output tokens in one request. A hard filter for any task involving long documents, treaties, or full claim packets that don't fit in a smaller window — no amount of prompt engineering fixes this.","knowledge_cutoff":"December 2023 — the oldest cutoff of any model in this entire table, over two years stale at evaluation time. A real limitation for anything needing recent knowledge.","release_date":"Released September 25, 2024.","eval_cost":"Dollar cost to run the full Artificial Analysis Intelligence Index suite once. A rough proxy for what the model costs on heavy reasoning workloads in production, not just its per-token list price.","open_weight":"Llama 3.2 Community License — widest third-party fine-tune ecosystem of any model here by volume, even though the base model itself is no longer state-of-the-art for its size.","vision":"Native multimodal input support (images/PDFs). A hard requirement for OCR, scanned-document, or imagery-based use cases — text-only models can't help here.","audio_input":"Native audio understanding — the model directly processes sound (tone, speaker changes, non-speech audio), not just a bolted-on transcription step. Most vendors here do not offer this on their core text/reasoning model.","video_input":"Native video understanding — the model processes video frames/motion directly in one call, rather than requiring you to pre-extract and caption frames yourself. A hard requirement for video-based inspection or analysis use cases.","image_gen":"Whether the vendor offers image generation in the same ecosystem (often a separate sibling model, not the chat/reasoning model itself). Relevant for marketing or document-mockup use cases, not a substitute for vision *input*."}},{"name":"Qwen3.5 9B","vendor":"Alibaba","input_price":0.1,"output_price":0.3,"cache_hit_price":null,"blended_price":0.12,"context":262000,"intelligence":32,"speed":90,"ttft":1.3,"knowledge_cutoff":"2025 (exact date not separately published by Alibaba)","release_date":"March 2026","eval_cost":null,"reasoning":true,"vision":true,"open_weight":true,"ocr_accuracy":null,"audio_input":false,"video_input":false,"image_gen":false,"notes":"The most intelligent model under 10B parameters tracked by Artificial Analysis at evaluation time; native vision, Apache 2.0, but uses notably more output tokens per task than peers.","justifications":{"intelligence":"32 on Artificial Analysis Intelligence Index — the most intelligent model under 10B parameters tracked by Artificial Analysis at evaluation time, ahead of every other SLM in this table by a wide margin.","speed":"90 tok/s once generation starts — mid-pack for this size class.","ttft":"Time-to-first-token: how long before any output appears. This is what users actually feel as 'slow' in a chat UI, distinct from total throughput.","input_price":"Cost per 1M input tokens. Dominates total spend for long-context, document-heavy, or RAG-style workloads where input >> output.","output_price":"Cost per 1M output tokens, typically 4-8x the input price across vendors. Dominates total spend for generation-heavy workloads (long-form drafting, code generation, reasoning traces).","blended_price":"Weighted 7:2:1 cache-hit:input:output blend (Artificial Analysis convention), approximating realistic production traffic where most tokens are repeated system prompts/context rather than fresh input.","cache_hit_price":"Cost for tokens served from a prompt cache instead of reprocessed fresh. Matters enormously for high-volume apps with a stable system prompt or repeated document context; some vendors discount this 90%+.","context":"262K-token context window with native vision — unusually capable for a sub-10B model; Qwen3.5 9B leads all sub-15B models on multimodal reasoning (MMMU-Pro).","knowledge_cutoff":"Not separately published by Alibaba for this exact release.","release_date":"Released March 2026 as part of the Qwen3.5 small-model expansion (0.8B/2B/4B/9B).","eval_cost":"No published $ eval cost, but the intelligence gains in the Qwen3.5 small-model generation come at a real cost: this model class uses 200M+ output tokens to run the Intelligence Index suite, noticeably more verbose than peers at the same size — budget for that in production.","open_weight":"Apache 2.0, native vision support, part of the broader Qwen3.5 family release.","vision":"Native multimodal input support (images/PDFs). A hard requirement for OCR, scanned-document, or imagery-based use cases — text-only models can't help here.","audio_input":"Native audio understanding — the model directly processes sound (tone, speaker changes, non-speech audio), not just a bolted-on transcription step. Most vendors here do not offer this on their core text/reasoning model.","video_input":"Native video understanding — the model processes video frames/motion directly in one call, rather than requiring you to pre-extract and caption frames yourself. A hard requirement for video-based inspection or analysis use cases.","image_gen":"Whether the vendor offers image generation in the same ecosystem (often a separate sibling model, not the chat/reasoning model itself). Relevant for marketing or document-mockup use cases, not a substitute for vision *input*."}},{"name":"Ministral 3 8B","vendor":"Mistral","input_price":0.1,"output_price":0.1,"cache_hit_price":null,"blended_price":0.1,"context":128000,"intelligence":15,"speed":110,"ttft":1.0,"knowledge_cutoff":"Late 2025 (exact date not separately published by Mistral)","release_date":"December 2025","eval_cost":null,"reasoning":true,"vision":false,"open_weight":true,"ocr_accuracy":null,"audio_input":false,"video_input":false,"image_gen":false,"notes":"Mistral's small-model tier (3B/8B/14B family); best cost-to-performance ratio Mistral has shipped at this size, per independent benchmarking.","justifications":{"intelligence":"15 on Artificial Analysis Intelligence Index — tied with Gemma 4 E4B, ahead of Granite 4.1 8B (12); Mistral's own benchmarking frames this as the best cost-to-performance ratio it has shipped at this size.","speed":"Output tokens/sec once generation has started. Matters for long responses and streaming UX; largely irrelevant for short, latency-insensitive batch jobs.","ttft":"Time-to-first-token: how long before any output appears. This is what users actually feel as 'slow' in a chat UI, distinct from total throughput.","input_price":"Cost per 1M input tokens. Dominates total spend for long-context, document-heavy, or RAG-style workloads where input >> output.","output_price":"$0.10/M output — flat with input price, unusual among the models in this table where output typically costs several times more than input.","blended_price":"Weighted 7:2:1 cache-hit:input:output blend (Artificial Analysis convention), approximating realistic production traffic where most tokens are repeated system prompts/context rather than fresh input.","cache_hit_price":"Cost for tokens served from a prompt cache instead of reprocessed fresh. Matters enormously for high-volume apps with a stable system prompt or repeated document context; some vendors discount this 90%+.","context":"Maximum combined input+output tokens in one request. A hard filter for any task involving long documents, treaties, or full claim packets that don't fit in a smaller window — no amount of prompt engineering fixes this.","knowledge_cutoff":"Not separately published by Mistral for this exact release.","release_date":"Released December 2025 alongside the rest of the Ministral 3 family.","eval_cost":"Dollar cost to run the full Artificial Analysis Intelligence Index suite once. A rough proxy for what the model costs on heavy reasoning workloads in production, not just its per-token list price.","open_weight":"Open weights, part of the three-size Ministral 3 family (3B/8B/14B) released alongside Mistral Large 3.","vision":"Native multimodal input support (images/PDFs). A hard requirement for OCR, scanned-document, or imagery-based use cases — text-only models can't help here.","audio_input":"Native audio understanding — the model directly processes sound (tone, speaker changes, non-speech audio), not just a bolted-on transcription step. Most vendors here do not offer this on their core text/reasoning model.","video_input":"Native video understanding — the model processes video frames/motion directly in one call, rather than requiring you to pre-extract and caption frames yourself. A hard requirement for video-based inspection or analysis use cases.","image_gen":"Whether the vendor offers image generation in the same ecosystem (often a separate sibling model, not the chat/reasoning model itself). Relevant for marketing or document-mockup use cases, not a substitute for vision *input*."}},{"name":"Granite 4.1 8B","vendor":"IBM","input_price":0.05,"output_price":0.1,"cache_hit_price":null,"blended_price":0.055,"context":128000,"intelligence":12,"speed":130,"ttft":0.8,"knowledge_cutoff":"2025 (exact date not separately published by IBM)","release_date":"April 2026","eval_cost":null,"reasoning":false,"vision":false,"open_weight":true,"ocr_accuracy":null,"audio_input":false,"video_input":false,"image_gen":false,"notes":"IBM's enterprise-focused small model; lower raw intelligence than Ministral 3 8B or Gemma 4 E4B, but the most token-efficient model in this entire table (~4M tokens to run the full eval suite, vs. tens of millions for peers) — relevant if you pay per output token at volume.","justifications":{"intelligence":"12 on Artificial Analysis Intelligence Index — trails Ministral 3 8B (15) and Gemma 4 E4B (15) on raw intelligence; IBM trades some intelligence for token efficiency.","speed":"130 tok/s once generation starts — a typical figure for this size class; Granite 4.1's real differentiator is token efficiency (see eval cost), not raw speed.","ttft":"Time-to-first-token: how long before any output appears. This is what users actually feel as 'slow' in a chat UI, distinct from total throughput.","input_price":"Cost per 1M input tokens. Dominates total spend for long-context, document-heavy, or RAG-style workloads where input >> output.","output_price":"Cost per 1M output tokens, typically 4-8x the input price across vendors. Dominates total spend for generation-heavy workloads (long-form drafting, code generation, reasoning traces).","blended_price":"Weighted 7:2:1 cache-hit:input:output blend (Artificial Analysis convention), approximating realistic production traffic where most tokens are repeated system prompts/context rather than fresh input.","cache_hit_price":"Cost for tokens served from a prompt cache instead of reprocessed fresh. Matters enormously for high-volume apps with a stable system prompt or repeated document context; some vendors discount this 90%+.","context":"Maximum combined input+output tokens in one request. A hard filter for any task involving long documents, treaties, or full claim packets that don't fit in a smaller window — no amount of prompt engineering fixes this.","knowledge_cutoff":"Not separately published by IBM for this exact release.","release_date":"Released April 2026 alongside Granite 4.1 3B and 30B.","eval_cost":"No published $ eval cost, but Granite 4.1 8B uses roughly 4M output tokens to run the full Intelligence Index suite — about 20x fewer than Qwen3.5 9B (78M) and 3x fewer than Ministral 3 8B (13M) for a comparable evaluation, the most token-efficient model in this entire table. If you pay per output token at real volume, that efficiency can matter more than the raw intelligence gap.","open_weight":"Apache 2.0; IBM publishes partial disclosure of pre-training data, post-training data, and methodology, scoring 61 on Artificial Analysis's Openness Index — above Qwen3.5 (39) and Gemma 4 (39) on that specific measure.","vision":"Native multimodal input support (images/PDFs). A hard requirement for OCR, scanned-document, or imagery-based use cases — text-only models can't help here.","audio_input":"Native audio understanding — the model directly processes sound (tone, speaker changes, non-speech audio), not just a bolted-on transcription step. Most vendors here do not offer this on their core text/reasoning model.","video_input":"Native video understanding — the model processes video frames/motion directly in one call, rather than requiring you to pre-extract and caption frames yourself. A hard requirement for video-based inspection or analysis use cases.","image_gen":"Whether the vendor offers image generation in the same ecosystem (often a separate sibling model, not the chat/reasoning model itself). Relevant for marketing or document-mockup use cases, not a substitute for vision *input*."}}],"usecases":[{"name":"FNOL triage","category":"Claims","complexity":3,"latency":4,"volume":4,"context":3,"regulated":true,"vision":false,"open_weight":false,"audio":false,"video":false,"image_gen":false,"note":"High volume, moderate complexity intake routing.","keywords":["fnol","first notice of loss","claim intake","triage"]},{"name":"Underwriting document review","category":"Underwriting","complexity":4,"latency":2,"volume":2,"context":5,"regulated":true,"vision":false,"open_weight":false,"audio":false,"video":false,"image_gen":false,"note":"Long documents + regulatory exposure favor accuracy over speed.","keywords":["underwriting review","submission review","doc review"]},{"name":"Commercial submission triage","category":"Underwriting","complexity":3,"latency":3,"volume":3,"context":5,"regulated":false,"vision":false,"open_weight":false,"audio":false,"video":false,"image_gen":false,"note":"Large multi-document commercial submissions.","keywords":["commercial submission","submission triage"]},{"name":"Fraud ring detection","category":"Claims / SIU","complexity":4,"latency":3,"volume":3,"context":2,"regulated":true,"vision":false,"open_weight":false,"audio":false,"video":false,"image_gen":false,"note":"Reasoning-heavy cross-referencing of linked entities.","keywords":["fraud detection","fraud ring","siu","special investigation"]},{"name":"Claims document brief","category":"Claims","complexity":3,"latency":3,"volume":3,"context":3,"regulated":true,"vision":false,"open_weight":false,"audio":false,"video":false,"image_gen":false,"note":"Summarize a claim packet for an adjuster.","keywords":["claims brief","claim summary","adjuster brief"]},{"name":"Policy comparison (broker)","category":"Distribution","complexity":2,"latency":2,"volume":3,"context":3,"regulated":false,"vision":false,"open_weight":false,"audio":false,"video":false,"image_gen":false,"note":"Line-by-line comparison against a standard form.","keywords":["policy comparison","broker comparison","coverage comparison"]},{"name":"Renewal data reconstruction","category":"Underwriting ops","complexity":3,"latency":2,"volume":2,"context":4,"regulated":false,"vision":false,"open_weight":false,"audio":false,"video":false,"image_gen":false,"note":"Extract actuarial metrics from loss runs and filings.","keywords":["renewal data","loss run","data reconstruction"]},{"name":"Producer / agent copilot","category":"Distribution","complexity":2,"latency":3,"volume":4,"context":2,"regulated":false,"vision":false,"open_weight":false,"audio":false,"video":false,"image_gen":false,"note":"RAG-style Q&A for producers over a knowledge base.","keywords":["agent copilot","producer copilot","agent assistant"]},{"name":"Customer self-service chat","category":"Service","complexity":1,"latency":5,"volume":5,"context":1,"regulated":false,"vision":false,"open_weight":false,"audio":false,"video":false,"image_gen":false,"note":"Highest volume, lowest complexity, real-time.","keywords":["customer chat","chatbot","self service","support chat"]},{"name":"Regulatory filing review","category":"Compliance","complexity":5,"latency":1,"volume":1,"context":3,"regulated":true,"vision":false,"open_weight":false,"audio":false,"video":false,"image_gen":false,"note":"Highest-stakes text accuracy use case.","keywords":["regulatory filing","compliance review","filing review"]},{"name":"Reinsurance treaty analysis","category":"Reinsurance","complexity":4,"latency":1,"volume":1,"context":5,"regulated":true,"vision":false,"open_weight":false,"audio":false,"video":false,"image_gen":false,"note":"Multi-layer treaty programs need the largest context windows.","keywords":["reinsurance treaty","treaty analysis","cession"]},{"name":"Underwriting guideline Q&A","category":"Underwriting","complexity":2,"latency":3,"volume":4,"context":2,"regulated":false,"vision":false,"open_weight":false,"audio":false,"video":false,"image_gen":false,"note":"RAG over a fixed underwriting guideline manual.","keywords":["underwriting guideline","guideline q&a","guideline lookup"]},{"name":"Accelerated life underwriting","category":"Life & Health","complexity":4,"latency":2,"volume":2,"context":4,"regulated":true,"vision":false,"open_weight":false,"audio":false,"video":false,"image_gen":false,"note":"Regulated under NAIC AI Model Bulletin; medical record reasoning.","keywords":["life underwriting","accelerated underwriting","life insurance underwriting"]},{"name":"Protective value / mortality analysis","category":"Life & Health","complexity":5,"latency":1,"volume":1,"context":3,"regulated":true,"vision":false,"open_weight":false,"audio":false,"video":false,"image_gen":false,"note":"Highest reasoning depth; medical impairment scoring.","keywords":["mortality analysis","protective value","impairment scoring"]},{"name":"Subrogation & litigation correspondence","category":"Claims / Legal","complexity":2,"latency":3,"volume":3,"context":2,"regulated":false,"vision":false,"open_weight":false,"audio":false,"video":false,"image_gen":false,"note":"Drafting-heavy correspondence at moderate stakes.","keywords":["subrogation","litigation correspondence","demand letter"]},{"name":"Property risk modeling (imagery)","category":"Underwriting","complexity":3,"latency":2,"volume":3,"context":2,"regulated":false,"vision":true,"open_weight":false,"audio":false,"video":false,"image_gen":false,"note":"Aerial/satellite imagery analysis at scale.","keywords":["property risk","aerial imagery","satellite imagery","roof imagery"]},{"name":"Portfolio appetite summarization","category":"Underwriting leadership","complexity":3,"latency":1,"volume":1,"context":4,"regulated":false,"vision":false,"open_weight":false,"audio":false,"video":false,"image_gen":false,"note":"Long-document synthesis for leadership-facing output.","keywords":["portfolio appetite","book summary","appetite summary"]},{"name":"ACORD / invoice OCR","category":"Document processing","complexity":3,"latency":3,"volume":4,"context":2,"regulated":true,"vision":true,"open_weight":false,"audio":false,"video":false,"image_gen":false,"note":"Vision-heavy intake; measured OCR accuracy matters.","keywords":["acord","invoice ocr","ocr","invoice processing"]},{"name":"Policy document digitization","category":"Document processing","complexity":3,"latency":2,"volume":3,"context":3,"regulated":true,"vision":true,"open_weight":false,"audio":false,"video":false,"image_gen":false,"note":"Self-hosting may be required for data residency.","keywords":["policy digitization","document digitization","scan processing"]},{"name":"Claim packet synthesis","category":"Claims","complexity":4,"latency":3,"volume":3,"context":4,"regulated":true,"vision":true,"open_weight":false,"audio":false,"video":false,"image_gen":false,"note":"Cross-document contradiction-finding across a full packet.","keywords":["claim packet","packet synthesis","multi-document claim"]},{"name":"Telematics-based dynamic pricing","category":"Pricing","complexity":4,"latency":2,"volume":4,"context":2,"regulated":true,"vision":false,"open_weight":false,"audio":false,"video":false,"image_gen":false,"note":"Numeric reasoning over streaming data plus rate justification.","keywords":["telematics","dynamic pricing","usage based insurance","ubi"]},{"name":"Actuarial experience studies","category":"Actuarial","complexity":4,"latency":1,"volume":1,"context":5,"regulated":false,"vision":false,"open_weight":false,"audio":false,"video":false,"image_gen":false,"note":"Large structured datasets across many cuts.","keywords":["actuarial study","experience study","loss ratio analysis"]},{"name":"Propensity to buy / renew / lapse","category":"Distribution / Retention","complexity":2,"latency":3,"volume":4,"context":2,"regulated":false,"vision":false,"open_weight":false,"audio":false,"video":false,"image_gen":false,"note":"High-volume scoring at moderate complexity.","keywords":["propensity model","renewal propensity","lapse prediction","retention"]},{"name":"Renewal letter & coverage-gap generation","category":"Service / Retention","complexity":1,"latency":3,"volume":5,"context":1,"regulated":false,"vision":false,"open_weight":false,"audio":false,"video":false,"image_gen":false,"note":"Templated, personalized drafting at scale.","keywords":["renewal letter","coverage gap","renewal communication"]},{"name":"Parametric claims triggers","category":"Claims / Product","complexity":3,"latency":4,"volume":3,"context":1,"regulated":true,"vision":false,"open_weight":false,"audio":false,"video":false,"image_gen":false,"note":"Validate a data trigger against policy terms.","keywords":["parametric insurance","parametric trigger","index trigger"]},{"name":"Algorithmic bias / discrimination testing","category":"Compliance / Actuarial","complexity":5,"latency":1,"volume":1,"context":3,"regulated":true,"vision":false,"open_weight":false,"audio":false,"video":false,"image_gen":false,"note":"Highest-stakes reasoning; active litigation risk.","keywords":["bias testing","discrimination testing","algorithmic bias","model fairness"]},{"name":"AI/cyber liability underwriting","category":"Underwriting (Specialty)","complexity":5,"latency":1,"volume":1,"context":3,"regulated":true,"vision":false,"open_weight":false,"audio":false,"video":false,"image_gen":false,"note":"Evaluating a counterparty's own AI usage and exposure.","keywords":["cyber liability","ai liability underwriting","tech e&o"]},{"name":"Specialty risk engineering reports","category":"Underwriting (Specialty)","complexity":4,"latency":1,"volume":2,"context":5,"regulated":false,"vision":false,"open_weight":false,"audio":false,"video":false,"image_gen":false,"note":"Long technical reports synthesized into a risk assessment.","keywords":["risk engineering","specialty underwriting report"]},{"name":"Predictive win-rate quoting","category":"Underwriting / Distribution","complexity":3,"latency":2,"volume":3,"context":2,"regulated":false,"vision":false,"open_weight":false,"audio":false,"video":false,"image_gen":false,"note":"Structured scoring at submission volume.","keywords":["win rate","predictive quoting","quote scoring"]},{"name":"Cross-sell / next-best-product","category":"Distribution (Agency)","complexity":2,"latency":3,"volume":4,"context":1,"regulated":false,"vision":false,"open_weight":false,"audio":false,"video":false,"image_gen":false,"note":"High-volume propensity scoring across a book of business.","keywords":["cross sell","next best product","upsell"]},{"name":"Agentic quote-and-bind work cells","category":"Underwriting (Simple risks)","complexity":5,"latency":2,"volume":2,"context":2,"regulated":true,"vision":false,"open_weight":false,"audio":false,"video":false,"image_gen":false,"note":"Multi-step autonomous action; least-proven category, keep supervised.","keywords":["quote and bind","agentic underwriting","autonomous quoting"]},{"name":"Synthetic media detection in claims","category":"Claims / SIU","complexity":4,"latency":2,"volume":2,"context":2,"regulated":true,"vision":true,"open_weight":false,"audio":false,"video":false,"image_gen":false,"note":"Deepfake/staged-image detection is multimodal reasoning.","keywords":["synthetic media","deepfake detection","staged accident","manipulated photo"]},{"name":"Call center voice transcription & QA","category":"Service / Compliance","complexity":3,"latency":3,"volume":4,"context":2,"regulated":true,"vision":false,"open_weight":false,"audio":true,"video":false,"image_gen":false,"note":"Needs native audio understanding (tone, overlapping speakers, hold music) for accurate QA scoring, not just word-for-word transcription.","keywords":["voice transcription","call center","call recording","ivr","phone call analysis","voice qa"]},{"name":"Video-based property/vehicle inspection","category":"Claims / Underwriting","complexity":4,"latency":2,"volume":2,"context":2,"regulated":false,"vision":true,"open_weight":false,"audio":false,"video":true,"image_gen":false,"note":"Walkthrough video of property or vehicle damage analyzed directly, without manual frame extraction.","keywords":["video inspection","drone footage","video walkthrough","vehicle damage video","site inspection video"]},{"name":"Telehealth / virtual claims consultation analysis","category":"Claims / Life & Health","complexity":4,"latency":2,"volume":1,"context":2,"regulated":true,"vision":true,"open_weight":false,"audio":true,"video":true,"image_gen":false,"note":"Recorded virtual consultations combine speech and visual cues (injury demonstration, document holding) in one stream.","keywords":["telehealth","virtual consultation","video call analysis","remote medical assessment"]},{"name":"Marketing image generation for campaigns","category":"Marketing / Distribution","complexity":2,"latency":1,"volume":2,"context":1,"regulated":false,"vision":false,"open_weight":false,"audio":false,"video":false,"image_gen":true,"note":"Generating on-brand visual assets for agent/broker marketing materials, not analyzing existing images.","keywords":["image generation","marketing visuals","ad creative","generate image","campaign graphics"]},{"name":"Branch/claims-center signage and document mockups","category":"Operations / Marketing","complexity":1,"latency":1,"volume":1,"context":1,"regulated":false,"vision":false,"open_weight":false,"audio":false,"video":false,"image_gen":true,"note":"Low-stakes internal visual asset creation; any image-generation-capable model is overkill-proof here.","keywords":["signage","mockup","document template image","internal graphics"]}]};
+
+</script>
+<script>
+// ============================================================
+// Model Advisor — web app logic
+// Scoring engine ported 1:1 from model_advisor.py's score_model().
+// ============================================================
+
+const MODELS = ADVISOR_DATA.models;
+const USE_CASES = ADVISOR_DATA.usecases;
+
+const INTEL_TARGET = {1:15, 2:25, 3:35, 4:45, 5:55};
+const CONTEXT_FLOOR = {1:8000, 2:32000, 3:200000, 4:1000000, 5:2000000};
+
+function blendedPrice(m){ return m.blended_price; }
+
+function scoreModel(m, uc) {
+  let s = 0;
+  const intel = m.intelligence !== null ? m.intelligence : INTEL_TARGET[3];
+  const target = INTEL_TARGET[uc.complexity];
+  s -= Math.abs(intel - target) * 1.3;
+  if (intel < target - 10) s -= 25;
+
+  s -= m.ttft * 0.8;
+  if (uc.latency >= 4) s += Math.min(m.speed / 4, 40) - m.ttft * 3;
+
+  if (uc.volume >= 4) s -= (m.output_price / 2 + m.input_price) * 2.5;
+
+  const ctxNeed = CONTEXT_FLOOR[uc.context];
+  if (m.context < ctxNeed) s -= 45;
+  else s += Math.min((m.context - ctxNeed) / 500000, 6);
+
+  if (uc.regulated && !m.reasoning && uc.complexity >= 3) s -= 10;
+  if (uc.regulated && m.vendor === "Anthropic") s += 6;
+
+  if (uc.vision) {
+    if (!m.vision) s -= 100;
+    else if (m.ocr_accuracy) s += (m.ocr_accuracy - 85) * 2.2;
+    else s -= 6;
+  }
+
+  if (uc.open_weight && !m.open_weight) s -= 60;
+  if (uc.audio && !m.audio_input) s -= 120;
+  if (uc.video && !m.video_input) s -= 120;
+  if (uc.image_gen && !m.image_gen) s -= 80;
+
+  return s;
+}
+
+function scoreBreakdown(m, uc) {
+  const lines = [];
+  const intel = m.intelligence !== null ? m.intelligence : INTEL_TARGET[3];
+  const target = INTEL_TARGET[uc.complexity];
+  const intelPenalty = -Math.abs(intel - target) * 1.3;
+  lines.push({ why: `Intelligence ${m.intelligence ?? "n/a"} vs. target ${target} for complexity ${uc.complexity}/5`, pts: intelPenalty });
+  if (intel < target - 10) lines.push({ why: `Significantly under-provisioned for this complexity level`, pts: -25 });
+
+  lines.push({ why: `Baseline time-to-first-token cost (${m.ttft}s)`, pts: -m.ttft * 0.8 });
+  if (uc.latency >= 4) {
+    const speedBonus = Math.min(m.speed / 4, 40);
+    const ttftPenalty = -m.ttft * 3;
+    lines.push({ why: `Real-time latency need: speed bonus (${m.speed} tok/s)`, pts: speedBonus });
+    lines.push({ why: `Real-time latency need: extra TTFT penalty`, pts: ttftPenalty });
+  }
+
+  if (uc.volume >= 4) {
+    const volPenalty = -(m.output_price / 2 + m.input_price) * 2.5;
+    lines.push({ why: `High-volume cost weighting on price`, pts: volPenalty });
+  }
+
+  const ctxNeed = CONTEXT_FLOOR[uc.context];
+  if (m.context < ctxNeed) {
+    lines.push({ why: `Context window (${(m.context/1000).toLocaleString()}K) below the ${(ctxNeed/1000).toLocaleString()}K floor needed`, pts: -45 });
+  } else {
+    const bonus = Math.min((m.context - ctxNeed) / 500000, 6);
+    lines.push({ why: `Context headroom above the ${(ctxNeed/1000).toLocaleString()}K floor needed`, pts: bonus });
+  }
+
+  if (uc.regulated && !m.reasoning && uc.complexity >= 3) {
+    lines.push({ why: `Regulated workflow + non-reasoning model at complexity 3+`, pts: -10 });
+  }
+  if (uc.regulated && m.vendor === "Anthropic") {
+    lines.push({ why: `Regulated workflow: Anthropic benchmarked-low-hallucination bonus`, pts: 6 });
+  }
+
+  if (uc.vision) {
+    if (!m.vision) {
+      lines.push({ why: `Document/image input required but not supported`, pts: -100 });
+    } else if (m.ocr_accuracy) {
+      lines.push({ why: `Measured OCR accuracy bonus (${m.ocr_accuracy}%)`, pts: (m.ocr_accuracy - 85) * 2.2 });
+    } else {
+      lines.push({ why: `Vision-capable but no published OCR accuracy figure`, pts: -6 });
+    }
+  }
+
+  if (uc.open_weight && !m.open_weight) lines.push({ why: `Open weights / self-hosting required but unavailable`, pts: -60 });
+  if (uc.audio && !m.audio_input) lines.push({ why: `Native audio input required but not supported`, pts: -120 });
+  if (uc.video && !m.video_input) lines.push({ why: `Native video input required but not supported`, pts: -120 });
+  if (uc.image_gen && !m.image_gen) lines.push({ why: `Image generation required but not supported`, pts: -80 });
+
+  return lines;
+}
+
+function rankModels(uc) {
+  return MODELS.map(m => ({ model: m, score: scoreModel(m, uc) }))
+    .sort((a, b) => b.score - a.score);
+}
+
+// ---- use case matching ----
+function findUseCase(query) {
+  const q = query.toLowerCase().trim();
+  if (!q) return null;
+  for (const uc of USE_CASES) {
+    if (uc.name.toLowerCase() === q) return uc;
+  }
+  let best = null, bestScore = 0;
+  for (const uc of USE_CASES) {
+    const haystack = [uc.name.toLowerCase(), ...uc.keywords];
+    let score = 0;
+    for (const term of haystack) {
+      if (q.includes(term) || term.includes(q)) score += term.length;
+    }
+    if (score > bestScore) { best = uc; bestScore = score; }
+  }
+  return best;
+}
+
+function hasAny(q, ...words) { return words.some(w => q.includes(w)); }
+
+function guessUseCase(query) {
+  const q = query.toLowerCase();
+  let complexity = 3;
+  if (hasAny(q, "simple", "basic", "lookup", "classify", "classification", "routing")) complexity = 2;
+  if (hasAny(q, "reasoning", "complex", "analysis", "investigat", "fraud", "legal", "compliance", "regulat")) complexity = 4;
+  if (hasAny(q, "highest stakes", "bias", "discrimination", "litigation", "audit")) complexity = 5;
+
+  let latency = 3;
+  if (hasAny(q, "real time", "real-time", "chat", "instant", "live")) latency = 5;
+  if (hasAny(q, "batch", "overnight", "offline", "report")) latency = 1;
+
+  let volume = 3;
+  if (hasAny(q, "high volume", "scale", "millions", "thousands of", "every customer")) volume = 4;
+  if (hasAny(q, "low volume", "occasional", "rare", "few")) volume = 1;
+
+  let context = 2;
+  if (hasAny(q, "long document", "large document", "treaty", "full file", "entire", "huge", "big context")) context = 4;
+  if (hasAny(q, "short", "single field", "one line")) context = 1;
+
+  const regulated = hasAny(q, "regulat", "compliance", "audit", "legal", "underwrit", "pricing", "bias", "discrimination", "medical", "claim denial", "rate");
+  const vision = hasAny(q, "image", "photo", "scan", "pdf", "ocr", "document", "invoice", "form", "imagery");
+  const audio = hasAny(q, "audio", "voice", "call recording", "transcri", "speech", "phone call", "ivr");
+  const video = hasAny(q, "video", "footage", "drone", "walkthrough", "recording of");
+  const image_gen = hasAny(q, "generate an image", "generate image", "create an image", "image generation", "marketing visual", "graphic design", "ad creative", "mockup image");
+  const open_weight = hasAny(q, "self-host", "self host", "on-prem", "on prem", "data residency", "open weight", "open-weight");
+
+  return {
+    name: `Custom: "${query.trim()}"`, category: "Ad hoc",
+    complexity, latency, volume, context, regulated, vision, audio, video, image_gen, open_weight,
+    note: "No exact match in the known use-case list — this is a best-effort read of your description.",
+    keywords: [],
+  };
+}
+
+// ---- UI wiring ----
+const els = {
+  query: document.getElementById("queryInput"),
+  chips: document.getElementById("presetChips"),
+  browseToggle: document.getElementById("browseToggle"),
+  usecaseList: document.getElementById("usecaseList"),
+  verdictArea: document.getElementById("verdictArea"),
+  compareTable: document.getElementById("compareTable"),
+  sComplexity: document.getElementById("sComplexity"),
+  sLatency: document.getElementById("sLatency"),
+  sVolume: document.getElementById("sVolume"),
+  sContext: document.getElementById("sContext"),
+  fRegulated: document.getElementById("fRegulated"),
+  fVision: document.getElementById("fVision"),
+  fAudio: document.getElementById("fAudio"),
+  fVideo: document.getElementById("fVideo"),
+  fImageGen: document.getElementById("fImageGen"),
+  fOpenWeight: document.getElementById("fOpenWeight"),
+};
+
+const PRESETS = [
+  "FNOL triage", "Underwriting document review", "ACORD / invoice OCR",
+  "Customer self-service chat", "Reinsurance treaty analysis",
+  "Call center voice transcription & QA", "Marketing image generation for campaigns",
+];
+
+function buildChips() {
+  els.chips.innerHTML = "";
+  PRESETS.forEach(name => {
+    const chip = document.createElement("button");
+    chip.className = "chip";
+    chip.textContent = name;
+    chip.onclick = () => { els.query.value = name; clearActiveChips(); chip.classList.add("active"); update(); };
+    els.chips.appendChild(chip);
+  });
+}
+function clearActiveChips() {
+  document.querySelectorAll(".chip").forEach(c => c.classList.remove("active"));
+}
+
+function buildUseCaseList() {
+  const byCategory = {};
+  USE_CASES.forEach(uc => {
+    (byCategory[uc.category] = byCategory[uc.category] || []).push(uc);
+  });
+  els.usecaseList.innerHTML = "";
+  Object.entries(byCategory).forEach(([cat, items]) => {
+    const catEl = document.createElement("div");
+    catEl.className = "usecase-cat";
+    catEl.textContent = cat;
+    els.usecaseList.appendChild(catEl);
+    items.forEach(uc => {
+      const item = document.createElement("div");
+      item.className = "usecase-item";
+      item.textContent = uc.name;
+      item.onclick = () => { els.query.value = uc.name; clearActiveChips(); update(); };
+      els.usecaseList.appendChild(item);
+    });
+  });
+}
+
+els.browseToggle.onclick = () => {
+  els.usecaseList.classList.toggle("open");
+  els.browseToggle.textContent = els.usecaseList.classList.contains("open")
+    ? "Hide use case list ↑" : "Browse all 37 use cases by category →";
+};
+
+function currentManualProfile() {
+  return {
+    name: "Custom profile", category: "Ad hoc",
+    complexity: +els.sComplexity.value, latency: +els.sLatency.value,
+    volume: +els.sVolume.value, context: +els.sContext.value,
+    regulated: els.fRegulated.checked, vision: els.fVision.checked,
+    audio: els.fAudio.checked, video: els.fVideo.checked,
+    image_gen: els.fImageGen.checked, open_weight: els.fOpenWeight.checked,
+    note: "", keywords: [],
+  };
+}
+
+function fmtMoney(x, decimals=2) { return "$" + Number(x).toFixed(decimals); }
+
+function renderVerdict(uc) {
+  const ranked = rankModels(uc);
+  const top = ranked[0].model, topScore = ranked[0].score;
+  const runnerUp = ranked[1].model;
+
+  let runnerReason = "a different latency profile";
+  if ((runnerUp.intelligence||0) > (top.intelligence||0)) runnerReason = "higher accuracy";
+  else if (runnerUp.input_price < top.input_price) runnerReason = "lower cost at scale";
+  else if (runnerUp.context > top.context) runnerReason = "a larger context window";
+
+  const flags = [];
+  if (uc.regulated) flags.push("regulated/auditable");
+  if (uc.vision) flags.push("vision/document input");
+  if (uc.audio) flags.push("native audio input");
+  if (uc.video) flags.push("native video input");
+  if (uc.image_gen) flags.push("image generation");
+  if (uc.open_weight) flags.push("needs open weights / self-hosting");
+
+  let warningHtml = "";
+  const allExcluded = ranked.every(r => r.score < -90);
+  if (uc.audio && !top.audio_input) {
+    warningHtml = `<div class="verdict-warning">⚠ No model in this table fully satisfies the native-audio requirement at a high score — check the ledger below before committing.</div>`;
+  }
+
+  const html = `
+    <div class="verdict">
+      <div class="verdict-label">${uc.category !== "Ad hoc" ? uc.category : "Custom profile"} · Recommended</div>
+      <div class="verdict-name">${top.name}</div>
+      <div class="verdict-vendor">${top.vendor}</div>
+      <div class="verdict-meta">
+        <div class="m"><span class="n">${top.intelligence ?? "n/a"}</span><span class="l">Intelligence Index</span></div>
+        <div class="m"><span class="n">${(top.context/1000).toLocaleString()}K</span><span class="l">Context</span></div>
+        <div class="m"><span class="n">${fmtMoney(top.blended_price,3)}/M</span><span class="l">Blended price</span></div>
+        <div class="m"><span class="n">${top.speed} t/s</span><span class="l">Speed</span></div>
+        <div class="m"><span class="n">${top.ttft}s</span><span class="l">TTFT</span></div>
+      </div>
+      <div class="verdict-note">
+        <b>Profile:</b> complexity ${uc.complexity}/5 · latency ${uc.latency}/5 · volume ${uc.volume}/5 · context ${uc.context}/5
+        ${flags.length ? " · " + flags.join(", ") : ""}
+        <br><br>
+        <b>Runner-up:</b> ${runnerUp.name} (${runnerUp.vendor}) — consider if you need ${runnerReason}.
+        ${uc.regulated ? "<br><br>Regulated workflow: log prompts/model version/output, keep a human in the loop on edge cases, document a model card for audit." : ""}
+        ${uc.complexity === 5 && uc.regulated ? "<br><br>High complexity + regulated: treat any model's output as analysis feeding a sign-off — never the decision itself." : ""}
+      </div>
+      ${warningHtml}
+      <div class="ledger-toggle" id="ledgerToggle"><span class="arrow">▸</span> Show full scoring ledger (all 20 models)</div>
+    </div>
+    <div class="ledger" id="ledgerBody"></div>
+  `;
+  els.verdictArea.innerHTML = html;
+
+  const ledgerToggle = document.getElementById("ledgerToggle");
+  const ledgerBody = document.getElementById("ledgerBody");
+  ledgerToggle.onclick = () => {
+    ledgerToggle.classList.toggle("open");
+    ledgerBody.classList.toggle("open");
+    if (ledgerBody.classList.contains("open") && !ledgerBody.dataset.built) {
+      buildLedger(ledgerBody, ranked, uc);
+      ledgerBody.dataset.built = "1";
+    }
+  };
+}
+
+function buildLedger(container, ranked, uc) {
+  container.innerHTML = "";
+  ranked.forEach((entry, i) => {
+    const m = entry.model;
+    const row = document.createElement("div");
+    row.className = "ledger-row";
+    const head = document.createElement("div");
+    head.className = "ledger-head";
+    head.innerHTML = `
+      <div><span class="ledger-rank">#${i+1}</span><span class="ledger-name">${m.name}</span><span class="ledger-vendor">${m.vendor}</span></div>
+      <div class="ledger-score ${i===0?'top':''}">${entry.score.toFixed(1)} pts</div>
+    `;
+    const detail = document.createElement("div");
+    detail.className = "ledger-detail";
+    const lines = scoreBreakdown(m, uc);
+    detail.innerHTML = lines.map(l => `
+      <div class="ledger-line">
+        <span class="why">${l.why}</span>
+        <span class="pts ${l.pts >= 0 ? 'pos' : 'neg'}">${l.pts >= 0 ? '+' : ''}${l.pts.toFixed(1)}</span>
+      </div>
+    `).join("");
+    head.onclick = () => detail.classList.toggle("open");
+    row.appendChild(head);
+    row.appendChild(detail);
+    container.appendChild(row);
+  });
+}
+
+function buildCompareTable() {
+  const rows = MODELS.map(m => `
+    <tr>
+      <td class="name">${m.name}</td>
+      <td>${m.vendor}</td>
+      <td>${m.intelligence ?? "n/a"}</td>
+      <td>${m.speed}</td>
+      <td>${m.ttft}s</td>
+      <td>${fmtMoney(m.input_price)}</td>
+      <td>${fmtMoney(m.output_price)}</td>
+      <td>${fmtMoney(m.blended_price,3)}</td>
+      <td>${m.cache_hit_price !== null ? fmtMoney(m.cache_hit_price,3) : "n/a"}</td>
+      <td>${(m.context/1000).toLocaleString()}K</td>
+      <td>${m.knowledge_cutoff}</td>
+      <td>${m.release_date}</td>
+      <td>${m.eval_cost !== null ? fmtMoney(m.eval_cost) : "n/a"}</td>
+      <td>${m.open_weight ? "Yes" : "No"}</td>
+    </tr>
+  `).join("");
+  els.compareTable.innerHTML = `
+    <thead><tr>
+      <th>Model</th><th>Vendor</th><th>Intel.</th><th>Speed</th><th>TTFT</th>
+      <th>In $/M</th><th>Out $/M</th><th>Blended $/M</th><th>Cache $/M</th><th>Context</th>
+      <th>Knowledge cutoff</th><th>Release date</th><th>Eval cost</th><th>Open?</th>
+    </tr></thead>
+    <tbody>${rows}</tbody>
+  `;
+}
+
+function update() {
+  const q = els.query.value.trim();
+  let uc;
+  if (q) {
+    uc = findUseCase(q) || guessUseCase(q);
+  } else {
+    uc = currentManualProfile();
+  }
+  renderVerdict(uc);
+}
+
+// ============================================================
+// PTU vs. pay-as-you-go (Azure Provisioned Throughput) calculator
+// Ported 1:1 from model_advisor.py's compare_ptu_vs_payg(). PTU $/hour,
+// TPM/PTU, and the output-token capacity weight are all user-configurable —
+// Azure does not publish one universal figure for any of them.
+// ============================================================
+
+const PTU_COST_DEFAULTS = { hourly: 3.35, monthly_reservation: 2.02, annual_reservation: 1.31 };
+const TPM_PER_PTU_DEFAULTS = {
+  "Claude Haiku 4.5": 2500, "Claude Sonnet 4.6": 2000, "Claude Opus 4.7": 1200,
+  "GPT-5.4 mini": 3000, "GPT-5.4": 2500, "GPT-5.5": 2200,
+  "Gemini 3.1 Flash-Lite": 3500, "Gemini 3.1 Pro": 2200,
+  "Llama 4 Scout": 2800, "Llama 4 Maverick": 2400,
+  "DeepSeek V3.2": 2600, "DeepSeek R1": 2000,
+  "Mistral Large 3": 2300, "Phi-4": 4000,
+  "Command A": 2400, "Command A+": 2600,
+  "Qwen3.7 Max": 2200, "Grok 4.3": 2000,
+  "Nova Pro": 2400, "Nova Micro": 4000,
+  "Gemma 4 E4B": 3800, "Llama 3.2 3B": 4200, "Qwen3.5 9B": 2900,
+  "Ministral 3 8B": 3400, "Granite 4.1 8B": 3600,
+};
+const DEFAULT_TPM_PER_PTU_FALLBACK = 2500;
+
+function findModelByName(query) {
+  const q = query.toLowerCase().trim();
+  let m = MODELS.find(m => m.name.toLowerCase() === q);
+  if (m) return m;
+  m = MODELS.find(m => m.name.toLowerCase().startsWith(q));
+  if (m) return m;
+  return MODELS.find(m => m.name.toLowerCase().includes(q)) || null;
+}
+
+function comparePtuVsPayg(model, cfg, monthlyIn, monthlyOut) {
+  const tpmPerPtu = cfg.tpmPerPtu ?? (TPM_PER_PTU_DEFAULTS[model.name] ?? DEFAULT_TPM_PER_PTU_FALLBACK);
+  const outWeight = cfg.outputWeight ?? (model.input_price ? model.output_price / model.input_price : 4.0);
+
+  const weightedTokens = monthlyIn + monthlyOut * outWeight;
+  const minutesPerMonth = cfg.hoursPerMonth * 60;
+  const requiredTpm = minutesPerMonth ? weightedTokens / minutesPerMonth : 0;
+  const availableTpm = tpmPerPtu * cfg.ptusAvailable;
+  const coversVolume = availableTpm >= requiredTpm;
+  const utilizationPct = availableTpm ? (requiredTpm / availableTpm) * 100 : null;
+
+  const ptuCost = cfg.ptusAvailable * cfg.ptuHourlyCost * cfg.hoursPerMonth;
+  const paygCost = (monthlyIn / 1e6) * model.input_price + (monthlyOut / 1e6) * model.output_price;
+  const ptusNeeded = requiredTpm ? requiredTpm / tpmPerPtu : 0;
+
+  let cheaper = ptuCost < paygCost ? "PTU" : "PAYG";
+  let savings = Math.abs(ptuCost - paygCost);
+  let savingsPct = Math.max(ptuCost, paygCost) ? (savings / Math.max(ptuCost, paygCost)) * 100 : 0;
+
+  if (cfg.ptusAvailable <= 0) {
+    cheaper = "PAYG";
+    savings = paygCost;
+    savingsPct = paygCost > 0 ? 100 : 0;
+  }
+
+  return {
+    requiredTpm, availableTpm, coversVolume, utilizationPct, ptusNeeded,
+    ptuCost, paygCost, cheaper, savings, savingsPct, outWeight, tpmPerPtu,
+  };
+}
+
+let ptuVolumeMode = "tokens"; // "tokens" or "docs"
+
+function setPtuMode(mode) {
+  ptuVolumeMode = mode;
+  document.getElementById("ptuTokenInputs").style.display = mode === "tokens" ? "grid" : "none";
+  document.getElementById("ptuDocInputs").style.display = mode === "docs" ? "grid" : "none";
+  document.getElementById("ptuModeTokens").style.background = mode === "tokens" ? "var(--ink)" : "transparent";
+  document.getElementById("ptuModeTokens").style.color = mode === "tokens" ? "var(--parchment)" : "var(--ink)";
+  document.getElementById("ptuModeTokens").style.borderColor = mode === "tokens" ? "var(--ink)" : "var(--line)";
+  document.getElementById("ptuModeDocs").style.background = mode === "docs" ? "var(--ink)" : "transparent";
+  document.getElementById("ptuModeDocs").style.color = mode === "docs" ? "var(--parchment)" : "var(--ink)";
+  document.getElementById("ptuModeDocs").style.borderColor = mode === "docs" ? "var(--ink)" : "var(--line)";
+  updatePtu();
+}
+
+function getMonthlyVolume() {
+  if (ptuVolumeMode === "tokens") {
+    return {
+      monthlyIn: parseFloat(document.getElementById("ptuMonthlyIn").value) || 0,
+      monthlyOut: parseFloat(document.getElementById("ptuMonthlyOut").value) || 0,
+      derivation: null,
+    };
+  }
+  const subs = parseFloat(document.getElementById("ptuSubs").value) || 0;
+  const forms = parseFloat(document.getElementById("ptuForms").value) || 1;
+  const pages = parseFloat(document.getElementById("ptuPages").value) || 5;
+  const tpp = parseFloat(document.getElementById("ptuTpp").value) || 800;
+  const ioRatio = parseFloat(document.getElementById("ptuIoRatio").value) || 1.0;
+  const totalPages = subs * forms * pages;
+  const totalInputYear = totalPages * tpp;
+  const totalOutputYear = totalInputYear * ioRatio;
+  const monthlyIn = totalInputYear / 12;
+  const monthlyOut = totalOutputYear / 12;
+  const derivation = [
+    `${subs.toLocaleString()} submissions/yr × ${forms} forms × ${pages} pages = ${totalPages.toLocaleString()} total pages/yr`,
+    `× ${tpp} tokens/page = ${(totalInputYear/1e6).toFixed(1)}M input tokens/yr → ${(monthlyIn/1e6).toFixed(1)}M/month`,
+    `Output: ${ioRatio}× ratio → ${(monthlyOut/1e6).toFixed(1)}M tokens/month`,
+  ].join("\n");
+  return { monthlyIn, monthlyOut, derivation };
+}
+
+const ptuEls = {
+  model: document.getElementById("ptuModel"),
+  ptus: document.getElementById("ptuPtus"),
+  billing: document.getElementById("ptuBilling"),
+  cost: document.getElementById("ptuCost"),
+  tpm: document.getElementById("ptuTpm"),
+  weight: document.getElementById("ptuWeight"),
+  monthlyIn: document.getElementById("ptuMonthlyIn"),
+  monthlyOut: document.getElementById("ptuMonthlyOut"),
+  result: document.getElementById("ptuResult"),
+};
+
+function populatePtuModelSelect() {
+  const opts = MODELS.map(m => `<option value="${m.name}">${m.name} (${m.vendor})</option>`).join("");
+  ptuEls.model.innerHTML = opts;
+  document.getElementById("ptuCompareModels").innerHTML = opts;
+}
+
+function ptuDefaultsForModel(modelName) {
+  const m = findModelByName(modelName);
+  if (!m) return;
+  ptuEls.tpm.placeholder = String(TPM_PER_PTU_DEFAULTS[m.name] ?? DEFAULT_TPM_PER_PTU_FALLBACK);
+  ptuEls.weight.placeholder = (m.input_price ? (m.output_price / m.input_price).toFixed(2) : "4.00");
+}
+
+function fmtMoneyFull(x, decimals = 2) { return "$" + Number(x).toLocaleString(undefined, { minimumFractionDigits: decimals, maximumFractionDigits: decimals }); }
+
+function updatePtu() {
+  const m = findModelByName(ptuEls.model.value);
+  if (!m) { ptuEls.result.innerHTML = `<p class="empty-state">Pick a model to compare.</p>`; return; }
+
+  const ptusAvailable = parseFloat(ptuEls.ptus.value) || 0;
+  const billing = ptuEls.billing.value;
+  const ptuHourlyCost = ptuEls.cost.value !== "" ? parseFloat(ptuEls.cost.value) : PTU_COST_DEFAULTS[billing];
+  const tpmPerPtu = ptuEls.tpm.value !== "" ? parseFloat(ptuEls.tpm.value) : null;
+  const outputWeight = ptuEls.weight.value !== "" ? parseFloat(ptuEls.weight.value) : null;
+  const vol = getMonthlyVolume();
+  const monthlyIn = vol.monthlyIn;
+  const monthlyOut = vol.monthlyOut;
+  const derivEl = document.getElementById("ptuDocDerivation");
+  if (derivEl) { derivEl.textContent = vol.derivation || ""; derivEl.style.display = vol.derivation ? "block" : "none"; }
+
+  const cfg = { ptusAvailable, ptuHourlyCost, tpmPerPtu, outputWeight, hoursPerMonth: 730 };
+  const r = comparePtuVsPayg(m, cfg, monthlyIn, monthlyOut);
+
+  const tpmUsedLabel = tpmPerPtu !== null ? "your value" : "planning default — verify with Azure's capacity calculator";
+  const weightUsedLabel = outputWeight !== null ? "your value" : "derived from output:input price ratio — approximation";
+
+  let coverageLine;
+  if (ptusAvailable <= 0) {
+    coverageLine = `<span class="pts neg">0 PTUs provides no capacity — not a real deployment option, just a reference point.</span>`;
+  } else if (r.coversVolume) {
+    coverageLine = `Your PTUs <b>cover</b> this volume, at <b>${r.utilizationPct.toFixed(1)}%</b> utilization.`;
+  } else {
+    const utilStr = r.utilizationPct !== null ? r.utilizationPct.toFixed(1) + "%" : "undefined";
+    coverageLine = `Your PTUs <b>do not cover</b> this volume (${utilStr} of capacity needed). You'd need ~<b>${Math.max(r.ptusNeeded,0.1).toFixed(1)} PTUs</b> to fully cover it.`;
+  }
+
+  let costLine;
+  if (ptusAvailable <= 0) {
+    costLine = `With 0 PTUs there's no PTU option — PAYG is the only choice at <b>${fmtMoneyFull(r.paygCost)}/month</b>.`;
+  } else {
+    costLine = `<b>${r.cheaper}</b> is cheaper by <b>${fmtMoneyFull(r.savings)}/month</b> (${r.savingsPct.toFixed(1)}%) at this volume.`;
+  }
+
+  let warnLine = "";
+  if (r.utilizationPct !== null && r.utilizationPct < 50 && r.cheaper === "PTU" && ptusAvailable > 0) {
+    warnLine = `<div class="verdict-warning">⚠ Utilization is under 50% — PTU often only wins at sustained high utilization. Re-check once you have real traffic data.</div>`;
+  }
+
+  ptuEls.result.innerHTML = `
+    <div class="verdict">
+      <div class="verdict-label">PTU vs. pay-as-you-go · ${m.name}</div>
+      <div class="verdict-meta" style="margin-top:14px;">
+        <div class="m"><span class="n">${fmtMoneyFull(r.ptuCost)}</span><span class="l">PTU cost / month</span></div>
+        <div class="m"><span class="n">${fmtMoneyFull(r.paygCost)}</span><span class="l">PAYG cost / month</span></div>
+        <div class="m"><span class="n">${r.requiredTpm.toLocaleString(undefined,{maximumFractionDigits:0})}</span><span class="l">TPM required</span></div>
+        <div class="m"><span class="n">${r.availableTpm.toLocaleString(undefined,{maximumFractionDigits:0})}</span><span class="l">TPM available</span></div>
+      </div>
+      <div class="verdict-note">
+        ${coverageLine}<br><br>
+        ${costLine}<br><br>
+        <span style="color:#8E94A8;">TPM/PTU used: ${r.tpmPerPtu.toLocaleString()} (${tpmUsedLabel}) · Output weight used: ${r.outWeight.toFixed(2)}x (${weightUsedLabel})</span>
+      </div>
+      ${warnLine}
+    </div>
+  `;
+
+  // Multi-model comparison table
+  const compareEl = document.getElementById("ptuCompareModels");
+  const selectedNames = Array.from(compareEl.selectedOptions).map(o => o.value);
+  const allModels = [m, ...selectedNames.map(n => MODELS.find(x => x.name === n)).filter(Boolean)];
+  // Deduplicate (primary model may also be in compare list)
+  const seen = new Set();
+  const deduped = allModels.filter(x => { if (seen.has(x.name)) return false; seen.add(x.name); return true; });
+  if (deduped.length > 1) {
+    let tableHtml = `<div style="margin-top:20px;">
+      <div style="font-weight:700; font-size:13px; color:var(--ink); margin-bottom:10px; letter-spacing:.05em; text-transform:uppercase;">Side-by-side comparison · ${ptusAvailable} PTU${ptusAvailable!==1?'s':''}</div>
+      <div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;font-size:13px;min-width:560px;">
+      <thead><tr style="background:#f0efeb;">
+        <th style="text-align:left;padding:8px 12px;border-bottom:2px solid var(--line);">Model</th>
+        <th style="text-align:right;padding:8px 12px;border-bottom:2px solid var(--line);">Req TPM</th>
+        <th style="text-align:right;padding:8px 12px;border-bottom:2px solid var(--line);">Util %</th>
+        <th style="text-align:right;padding:8px 12px;border-bottom:2px solid var(--line);">PTU $/mo</th>
+        <th style="text-align:right;padding:8px 12px;border-bottom:2px solid var(--line);">PAYG $/mo</th>
+        <th style="text-align:left;padding:8px 12px;border-bottom:2px solid var(--line);">Cheaper</th>
+      </tr></thead><tbody>`;
+    deduped.forEach(mod => {
+      const ri = comparePtuVsPayg(mod, cfg, monthlyIn, monthlyOut);
+      const utilStr = ri.utilizationPct !== null ? ri.utilizationPct.toFixed(1)+"%" : "n/a";
+      const winStyle = ri.cheaper === "PAYG" ? "color:#2a7a4a;font-weight:700;" : "color:#7a2a2a;font-weight:700;";
+      tableHtml += `<tr style="border-bottom:1px solid var(--line);">
+        <td style="padding:8px 12px;font-weight:600;">${mod.name} <span style="color:#888;font-weight:400;">(${mod.vendor})</span></td>
+        <td style="padding:8px 12px;text-align:right;font-family:var(--mono);">${ri.requiredTpm.toLocaleString(undefined,{maximumFractionDigits:0})}</td>
+        <td style="padding:8px 12px;text-align:right;font-family:var(--mono);">${utilStr}</td>
+        <td style="padding:8px 12px;text-align:right;font-family:var(--mono);">${fmtMoneyFull(ri.ptuCost)}</td>
+        <td style="padding:8px 12px;text-align:right;font-family:var(--mono);">${fmtMoneyFull(ri.paygCost)}</td>
+        <td style="padding:8px 12px;font-family:var(--mono);${winStyle}">${ri.cheaper} (save ${fmtMoneyFull(ri.savings)}/mo)</td>
+      </tr>`;
+    });
+    tableHtml += `</tbody></table></div>
+      <p style="margin-top:8px;font-size:11px;color:#8E94A8;">PTU $/hr and TPM/PTU are planning defaults — verify with Azure before committing budget.</p></div>`;
+    ptuEls.result.innerHTML += tableHtml;
+  }
+}
+
+[ptuEls.model, ptuEls.ptus, ptuEls.billing, ptuEls.cost, ptuEls.tpm, ptuEls.weight, ptuEls.monthlyIn, ptuEls.monthlyOut]
+  .forEach(el => el.addEventListener("input", updatePtu));
+["ptuSubs","ptuForms","ptuPages","ptuTpp","ptuIoRatio"].forEach(id => {
+  const el = document.getElementById(id);
+  if (el) el.addEventListener("input", updatePtu);
+});
+document.getElementById("ptuCompareModels").addEventListener("change", updatePtu);
+ptuEls.model.addEventListener("change", () => { ptuDefaultsForModel(ptuEls.model.value); updatePtu(); });
+ptuEls.billing.addEventListener("change", () => {
+  ptuEls.cost.placeholder = String(PTU_COST_DEFAULTS[ptuEls.billing.value]);
+  updatePtu();
+});
+
+["sComplexity","sLatency","sVolume","sContext"].forEach(id => {
+  document.getElementById(id).addEventListener("input", e => {
+    document.getElementById("v" + id.slice(1)).textContent = e.target.value;
+    if (!els.query.value.trim()) update();
+  });
+});
+[els.fRegulated, els.fVision, els.fAudio, els.fVideo, els.fImageGen, els.fOpenWeight].forEach(el => {
+  el.addEventListener("change", () => { if (!els.query.value.trim()) update(); });
+});
+els.query.addEventListener("input", () => { clearActiveChips(); update(); });
+
+document.getElementById("statModels").textContent = MODELS.length;
+document.getElementById("statVendors").textContent = new Set(MODELS.map(m => m.vendor)).size;
+document.getElementById("statUseCases").textContent = USE_CASES.length;
+
+buildChips();
+buildUseCaseList();
+buildCompareTable();
+populatePtuModelSelect();
+ptuEls.billing.value = "hourly";
+ptuEls.cost.placeholder = String(PTU_COST_DEFAULTS.hourly);
+ptuDefaultsForModel(ptuEls.model.value);
+updatePtu();
+update();
+
+</script>
+</body>
+</html>
