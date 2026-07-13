@@ -1,0 +1,542 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Model Advisor — LLM Recommendation & PTU/PAYG Verdict</title>
+<style>
+  :root{
+    --navy:#1E2761; --navy-dark:#12193F; --navy-mid:#2E3A8C;
+    --ice:#CADCFC; --ice-light:#F3F6FD;
+    --gold:#C9A227; --gold-dark:#8A6A0F; --gold-light:#FBF3E3;
+    --grey:#5B6472; --grey-light:#8A93A6; --line:#D7DCE6;
+    --red:#B23A2E; --red-light:#FBEAE8;
+    --serif:Cambria,Georgia,'Times New Roman',serif;
+    --sans:'Segoe UI',Calibri,system-ui,-apple-system,Arial,sans-serif;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:var(--sans);color:#1c2333;background:#fff;line-height:1.55}
+  .wrap{max-width:1180px;margin:0 auto;padding:0 28px}
+
+  /* ---------- hero ---------- */
+  header{background:var(--navy-dark);color:#fff;padding:52px 0 0}
+  .kicker{font-size:12px;font-weight:700;letter-spacing:3px;color:var(--gold);text-transform:uppercase}
+  header h1{font-family:var(--serif);font-size:54px;font-weight:700;margin:10px 0 6px}
+  header .sub{font-size:19px;font-style:italic;color:var(--ice);max-width:760px}
+  .surfaces{margin-top:14px;font-size:14px;color:#fff;font-weight:600}
+  .surfaces .dot{color:var(--gold);padding:0 10px}
+  .statbar{background:var(--navy);margin-top:36px;padding:22px 0}
+  .stats{display:grid;grid-template-columns:repeat(4,1fr);gap:18px}
+  .stat b{font-family:var(--serif);font-size:34px;display:block;color:#fff}
+  .stat span{font-size:12.5px;color:var(--ice)}
+
+  /* ---------- sections ---------- */
+  section{padding:56px 0 8px}
+  .seclabel{font-size:12px;font-weight:700;letter-spacing:2.5px;color:var(--gold);text-transform:uppercase}
+  h2{font-family:var(--serif);font-size:32px;color:var(--navy);margin:6px 0 10px}
+  .lede{color:var(--grey);font-size:15px;max-width:860px;margin-bottom:22px}
+
+  /* ---------- query panel ---------- */
+  .querybox{display:flex;gap:12px;flex-wrap:wrap;align-items:center}
+  #ucInput{flex:1;min-width:320px;font-size:16px;padding:13px 16px;border:1.5px solid var(--line);
+    border-radius:9px;outline:none;font-family:var(--sans)}
+  #ucInput:focus{border-color:var(--navy)}
+  .btn{background:var(--navy);color:#fff;border:none;font-size:15px;font-weight:600;padding:13px 26px;
+    border-radius:9px;cursor:pointer}
+  .btn:hover{background:var(--navy-mid)}
+  .controls{display:flex;gap:22px;align-items:center;margin-top:14px;flex-wrap:wrap;font-size:13.5px;color:var(--grey)}
+  .controls label{display:flex;gap:7px;align-items:center;cursor:pointer}
+  .controls select{padding:4px 8px;border:1px solid var(--line);border-radius:6px;font-size:13px}
+  .chips{margin-top:16px;display:flex;flex-wrap:wrap;gap:8px}
+  .chip{font-size:12.5px;padding:6px 13px;border-radius:999px;border:1px solid var(--line);
+    background:var(--ice-light);color:var(--navy);cursor:pointer}
+  .chip:hover{background:var(--ice)}
+
+  /* ---------- recommendation ---------- */
+  #results{display:none;margin-top:30px}
+  .profilebar{font-size:13px;color:var(--grey);background:var(--ice-light);border:1px solid var(--line);
+    border-radius:8px;padding:10px 16px;margin-bottom:18px}
+  .profilebar b{color:var(--navy)}
+  .reco-grid{display:grid;grid-template-columns:1.35fr 1fr;gap:20px}
+  .reco-card{background:var(--navy);border-radius:14px;color:#fff;padding:26px 28px;
+    box-shadow:0 10px 26px rgba(30,39,97,.22)}
+  .reco-card .tag{font-size:11px;font-weight:700;letter-spacing:2px;color:var(--gold)}
+  .reco-card h3{font-family:var(--serif);font-size:33px;margin:6px 0 2px}
+  .reco-card .vendor{color:var(--ice);font-size:15px}
+  .badge{display:inline-block;font-size:10.5px;font-weight:700;letter-spacing:1px;background:var(--gold);
+    color:var(--navy-dark);border-radius:999px;padding:3px 10px;margin-left:10px;vertical-align:middle}
+  .specs{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin:20px 0 14px}
+  .specs b{font-family:var(--serif);font-size:24px;display:block}
+  .specs span{font-size:11px;color:var(--ice)}
+  .reco-note{font-size:12.5px;color:var(--ice);border-top:1px solid rgba(255,255,255,.18);padding-top:12px}
+  .side-stack{display:flex;flex-direction:column;gap:14px}
+  .card{border:1px solid var(--line);border-radius:12px;padding:18px 20px;background:#fff}
+  .card.ice{background:var(--ice-light)}
+  .card.goldy{background:var(--gold-light);border-color:var(--gold)}
+  .card h4{font-size:12px;font-weight:700;letter-spacing:1.5px;color:var(--gold-dark);text-transform:uppercase;margin-bottom:6px}
+  .card .big{font-family:var(--serif);font-size:21px;color:var(--navy);font-weight:700}
+  .card p{font-size:13px;color:var(--grey);margin-top:5px}
+  .advisory{margin-top:18px;background:var(--gold-light);border:1px solid var(--gold);
+    border-radius:10px;padding:13px 18px;font-size:13.5px;color:var(--navy-dark);display:none}
+
+  /* ---------- tables ---------- */
+  table{width:100%;border-collapse:collapse;margin-top:20px;font-size:13.5px}
+  th{background:var(--navy);color:#fff;text-align:left;padding:9px 12px;font-weight:600;white-space:nowrap}
+  td{padding:8px 12px;border-bottom:1px solid var(--line);white-space:nowrap}
+  tr:nth-child(even) td{background:var(--ice-light)}
+  td.num,th.num{text-align:right}
+  .slmstar{color:var(--gold-dark);font-weight:700}
+  .tablenote{font-size:12px;color:var(--grey-light);margin-top:8px;font-style:italic}
+
+  /* ---------- PTU section ---------- */
+  #ptuSection{display:none}
+  .ptu-config{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-top:10px}
+  .field label{display:block;font-size:12px;font-weight:700;color:var(--navy);margin-bottom:5px}
+  .field input,.field select{width:100%;padding:10px 12px;font-size:14px;border:1.5px solid var(--line);
+    border-radius:8px;outline:none}
+  .field input:focus{border-color:var(--navy)}
+  .field .hint{font-size:11px;color:var(--grey-light);margin-top:4px}
+  .hint.yours{color:var(--gold-dark);font-weight:600}
+  .ptu-stats{display:grid;grid-template-columns:repeat(5,1fr);gap:14px;margin-top:24px}
+  .pstat{border:1px solid var(--line);border-radius:11px;padding:15px 8px;text-align:center;background:var(--ice-light)}
+  .pstat b{font-family:var(--serif);font-size:23px;color:var(--navy);display:block}
+  .pstat span{font-size:11px;color:var(--grey)}
+  .pstat.dark{background:var(--navy);border-color:var(--navy)}
+  .pstat.dark b{color:#fff}
+  .pstat.dark span{color:var(--ice)}
+  #verdict{margin-top:22px;border-radius:12px;padding:20px 26px;display:flex;gap:22px;align-items:center}
+  #verdict.payg{background:var(--navy);color:#fff}
+  #verdict.ptu{background:var(--gold);color:var(--navy-dark)}
+  #verdict .v-side{font-family:var(--serif);font-size:30px;font-weight:700;min-width:130px}
+  #verdict .v-body{font-size:14px}
+  #verdict.payg .v-body{color:var(--ice)}
+  .cautions{margin-top:12px;font-size:13px;color:var(--red);display:none;background:var(--red-light);
+    border:1px solid var(--red);border-radius:9px;padding:11px 16px}
+  .finenote{font-size:12px;color:var(--grey-light);margin-top:16px;font-style:italic}
+
+  /* ---------- all models filters ---------- */
+  .filters{display:flex;gap:20px;flex-wrap:wrap;align-items:center;font-size:13.5px;color:var(--grey);margin-top:6px}
+  .filters select{padding:6px 10px;border:1px solid var(--line);border-radius:7px}
+  .filters label{display:flex;gap:6px;align-items:center;cursor:pointer}
+
+  footer{margin-top:64px;background:var(--navy-dark);color:var(--ice);font-size:12.5px;padding:26px 0}
+  footer .wrap{display:flex;justify-content:space-between;gap:20px;flex-wrap:wrap}
+  @media(max-width:900px){
+    .reco-grid{grid-template-columns:1fr}
+    .ptu-stats{grid-template-columns:repeat(2,1fr)}
+    .ptu-config{grid-template-columns:1fr}
+    .stats{grid-template-columns:repeat(2,1fr)}
+    header h1{font-size:40px}
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="wrap">
+    <div class="kicker">Cross-Vendor LLM Recommendation &amp; Cost-Optimization</div>
+    <h1 style="color:#ffffffdf!important;">Model Advisor</h1>
+    <div class="sub">Type a use case. Get the right model, the best SLM alternative, and a PTU vs. pay-as-you-go billing verdict — all sized to that use case.</div>
+    <div class="surfaces">Command-Line Tool<span class="dot">•</span>Decision Cockpit (Streamlit)<span class="dot">•</span>This Web App</div>
+  </div>
+  <div class="statbar"><div class="wrap stats">
+    <div class="stat"><b>25</b><span>models tracked</span></div>
+    <div class="stat"><b>12</b><span>vendors</span></div>
+    <div class="stat"><b>37</b><span>pre-scored use cases</span></div>
+    <div class="stat"><b>10</b><span>scoring factors</span></div>
+  </div></div>
+</header>
+
+<!-- ============ 01 RECOMMEND ============ -->
+<section id="recommend">
+  <div class="wrap">
+    <div class="seclabel">01 — Describe the use case</div>
+    <h2>Which model should you actually call for this job?</h2>
+    <div class="lede">Type a use case in plain English or tap a chip. The engine scores all 25 models on ten factors — hard capability filters first (context, vision, audio, video, open weights), then intelligence fit, latency, and volume-weighted cost.</div>
+
+    <div class="querybox">
+      <input id="ucInput" type="text" placeholder='e.g. "FNOL triage", "ACORD invoice OCR", "summarize a 200-page commercial submission"'>
+      <button class="btn" onclick="runQuery()">Recommend</button>
+    </div>
+    <div class="controls">
+      <label><input type="checkbox" id="slmOnly" onchange="runQuery()"> Rank SLM-tier models only</label>
+      <label>Top&nbsp;<select id="topN" onchange="runQuery()"><option>3</option><option selected>5</option><option>8</option><option>10</option></select>&nbsp;models</label>
+    </div>
+    <div class="chips" id="chips"></div>
+
+    <div id="results">
+      <div class="profilebar" id="profileBar"></div>
+      <div class="reco-grid">
+        <div class="reco-card">
+          <div class="tag">RECOMMENDED</div>
+          <h3 id="recoName"></h3>
+          <div class="vendor" id="recoVendor"></div>
+          <div class="specs" id="recoSpecs"></div>
+          <div class="reco-note" id="recoNote"></div>
+        </div>
+        <div class="side-stack">
+          <div class="card ice">
+            <h4>Runner-up</h4>
+            <div class="big" id="runnerName"></div>
+            <p id="runnerWhy"></p>
+          </div>
+          <div class="card goldy" id="slmCard">
+            <h4>Best SLM option</h4>
+            <div class="big" id="slmName"></div>
+            <p id="slmWhy"></p>
+          </div>
+        </div>
+      </div>
+      <div class="advisory" id="regAdvisory"></div>
+      <table id="rankTable"></table>
+      <div class="tablenote">* = Small Language Model (SLM) tier. Blended price = 7:2:1 cache-hit:input:output weighting. Source: vendor API pricing pages + Artificial Analysis, June 2026 snapshot.</div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ 02 PTU VERDICT ============ -->
+<section id="ptuSection">
+  <div class="wrap">
+    <div class="seclabel">02 — Billing verdict for this use case</div>
+    <h2 id="ptuTitle">PTU vs. pay-as-you-go</h2>
+    <div class="lede">Auto-populated from the use case above: token volume is estimated from its volume tier and evaluated for the top recommended model against 50 reserved PTUs. Every value below is editable — figures you change are marked <b style="color:var(--gold-dark)">your value</b>; the rest are planning defaults.</div>
+
+    <div class="ptu-config">
+      <div class="field"><label>PTUs to evaluate</label>
+        <input type="number" id="ptus" value="50" min="0" oninput="markYours('ptus');updatePtu()">
+        <div class="hint" id="h-ptus">planning default</div></div>
+      <div class="field"><label>Billing commitment</label>
+        <select id="billing" onchange="updatePtu()">
+          <option value="hourly">Hourly (~$3.35/PTU/hr)</option>
+          <option value="monthly_reservation">Monthly reservation (~$2.02/PTU/hr)</option>
+          <option value="annual_reservation">Annual reservation (~$1.31/PTU/hr)</option>
+        </select>
+        <div class="hint">sets the default $/PTU/hour</div></div>
+      <div class="field"><label>$ per PTU per hour (override)</label>
+        <input type="number" id="ptuCost" placeholder="blank = billing default" step="0.01" oninput="markYours('ptuCost');updatePtu()">
+        <div class="hint" id="h-ptuCost">planning default</div></div>
+      <div class="field"><label>Monthly input tokens</label>
+        <input type="number" id="monIn" oninput="markYours('monIn');updatePtu()">
+        <div class="hint" id="h-monIn">planning estimate</div></div>
+      <div class="field"><label>Monthly output tokens</label>
+        <input type="number" id="monOut" oninput="markYours('monOut');updatePtu()">
+        <div class="hint" id="h-monOut">planning estimate</div></div>
+      <div class="field"><label>Tokens/min per PTU (override)</label>
+        <input type="number" id="tpmPtu" placeholder="blank = model default" oninput="markYours('tpmPtu');updatePtu()">
+        <div class="hint" id="h-tpmPtu">planning default</div></div>
+    </div>
+
+    <div class="ptu-stats">
+      <div class="pstat"><b id="reqTpm">—</b><span>Required TPM</span></div>
+      <div class="pstat"><b id="availTpm">—</b><span>Available TPM</span></div>
+      <div class="pstat"><b id="util">—</b><span>Utilization</span></div>
+      <div class="pstat dark"><b id="ptuCostOut">—</b><span>PTU cost / month (fixed)</span></div>
+      <div class="pstat dark"><b id="paygCostOut">—</b><span>PAYG cost / month</span></div>
+    </div>
+
+    <div id="verdict" class="payg">
+      <div class="v-side" id="vSide">PAYG</div>
+      <div class="v-body" id="vBody"></div>
+    </div>
+    <div class="cautions" id="cautions"></div>
+    <div class="finenote">Azure does not publish universal figures for $/PTU/hour, TPM-per-PTU, or the output-token capacity weight — the defaults here are planning estimates. Verify with Azure's own capacity calculator before committing budget.</div>
+  </div>
+</section>
+
+<!-- ============ 03 ALL MODELS ============ -->
+<section id="allModels">
+  <div class="wrap">
+    <div class="seclabel">03 — Full comparison table</div>
+    <h2>All 25 models</h2>
+    <div class="filters">
+      <label>Vendor <select id="fVendor" onchange="renderModelTable()"><option value="">All</option></select></label>
+      <label><input type="checkbox" id="fOpen" onchange="renderModelTable()"> Open weights only</label>
+      <label><input type="checkbox" id="fVision" onchange="renderModelTable()"> Vision only</label>
+      <label><input type="checkbox" id="fSlm" onchange="renderModelTable()"> SLM tier only</label>
+    </div>
+    <table id="modelTable"></table>
+    <div class="tablenote">* = SLM tier. Prices are $ per 1M tokens (USD). Treat as a June 2026 snapshot — vendor pricing changes frequently.</div>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap">
+    <div>Model Advisor — same model database and scoring logic as the CLI (model_advisor.py) and the Decision Cockpit (Streamlit).</div>
+    <div>Data snapshot: June 2026 · No server, no install — this file runs entirely offline.</div>
+  </div>
+</footer>
+
+<script>
+const DATA = {"models":[{"name":"Claude Haiku 4.5","vendor":"Anthropic","in_price":1.0,"out_price":5.0,"cache":0.1,"context":200000,"intel":30,"speed":120,"ttft":0.8,"cutoff":"February 2025","released":"October 15, 2025","eval_cost":null,"reasoning":false,"vision":true,"open":false,"ocr":null,"audio":false,"video":false,"imggen":false,"notes":"Fastest, cheapest current Claude tier; oldest cutoff in the lineup. Image input only \u2014 no native audio or video."},{"name":"Claude Sonnet 4.6","vendor":"Anthropic","in_price":3.0,"out_price":15.0,"cache":0.3,"context":1000000,"intel":42,"speed":90,"ttft":1.5,"cutoff":"August 2025","released":"February 17, 2026","eval_cost":null,"reasoning":true,"vision":true,"open":false,"ocr":95.2,"audio":false,"video":false,"imggen":false,"notes":"Production default for most Claude workloads; near-Opus coding/document quality at 40% lower cost. Image input only."},{"name":"Claude Opus 4.7","vendor":"Anthropic","in_price":5.0,"out_price":25.0,"cache":0.5,"context":1000000,"intel":54,"speed":50,"ttft":13.3,"cutoff":"January 2026","released":"April 16, 2026","eval_cost":3737.82,"reasoning":true,"vision":true,"open":false,"ocr":null,"audio":false,"video":false,"imggen":false,"notes":"Anthropic's highest-capability generally-available model at evaluation time; superseded by Opus 4.8 at the same price. Image input only."},{"name":"GPT-5.4 mini","vendor":"OpenAI","in_price":0.75,"out_price":4.5,"cache":0.075,"context":400000,"intel":40,"speed":155,"ttft":0.66,"cutoff":"August 2025 (est., family-aligned)","released":"March 2026","eval_cost":null,"reasoning":true,"vision":true,"open":false,"ocr":null,"audio":false,"video":false,"imggen":true,"notes":"Practical default for most enterprise GPT workloads; beats prior-gen GPT-5 mini at the same price. Image generation via tool call (DALL-E), not native understanding of audio/video."},{"name":"GPT-5.4","vendor":"OpenAI","in_price":2.5,"out_price":15.0,"cache":0.25,"context":1100000,"intel":51,"speed":166,"ttft":2.5,"cutoff":"August 31, 2025","released":"March 5, 2026","eval_cost":2131.77,"reasoning":true,"vision":true,"open":false,"ocr":91.8,"audio":false,"video":false,"imggen":true,"notes":"OpenAI's frontier model for complex professional work; largest GPT-5.4-family context window. No native audio/video understanding."},{"name":"GPT-5.5","vendor":"OpenAI","in_price":5.0,"out_price":30.0,"cache":0.5,"context":1050000,"intel":55,"speed":79,"ttft":5.0,"cutoff":"December 1, 2025","released":"April 23, 2026","eval_cost":null,"reasoning":true,"vision":true,"open":false,"ocr":null,"audio":false,"video":false,"imggen":true,"notes":"OpenAI's strongest agentic coding model at evaluation time; more token-efficient than GPT-5.4. No native audio/video understanding."},{"name":"Gemini 3.1 Flash-Lite","vendor":"Google","in_price":0.25,"out_price":1.5,"cache":0.025,"context":1000000,"intel":25,"speed":359,"ttft":0.5,"cutoff":"January 2025","released":"March 4, 2026","eval_cost":93.72,"reasoning":true,"vision":true,"open":false,"ocr":null,"audio":true,"video":true,"imggen":true,"notes":"Fastest model tracked; best value per dollar for high-volume, latency-sensitive production traffic. Genuinely native audio+video input, like Pro."},{"name":"Gemini 3.1 Pro","vendor":"Google","in_price":2.0,"out_price":12.0,"cache":0.2,"context":2000000,"intel":46,"speed":138,"ttft":2.6,"cutoff":"January 2025","released":"March 2026","eval_cost":815.11,"reasoning":true,"vision":true,"open":false,"ocr":null,"audio":true,"video":true,"imggen":true,"notes":"Largest proprietary context window tracked; the only model in this table with native audio AND video understanding in the base model."},{"name":"Llama 4 Scout","vendor":"Meta","in_price":0.08,"out_price":0.3,"cache":null,"context":10000000,"intel":14,"speed":140,"ttft":1.0,"cutoff":"August 2024","released":"April 5, 2026","eval_cost":26.42,"reasoning":false,"vision":true,"open":true,"ocr":null,"audio":false,"video":true,"imggen":false,"notes":"Largest advertised context window of any model here; effective usable context is materially lower per independent RULER testing. Native image+video input; no audio."},{"name":"Llama 4 Maverick","vendor":"Meta","in_price":0.27,"out_price":0.85,"cache":null,"context":1000000,"intel":14,"speed":110,"ttft":1.2,"cutoff":"August 2024","released":"April 5, 2026","eval_cost":null,"reasoning":false,"vision":true,"open":true,"ocr":null,"audio":true,"video":true,"imggen":false,"notes":"Open-weight, self-hostable, MoE architecture (17B active / 400B total, 128 experts); very low per-token cost. Unlike Scout, Maverick also takes native audio input."},{"name":"DeepSeek V3.2","vendor":"DeepSeek","in_price":0.28,"out_price":0.42,"cache":0.028,"context":128000,"intel":25,"speed":100,"ttft":1.0,"cutoff":"2024-2025 (exact date not separately published by DeepSeek)","released":"December 2025","eval_cost":null,"reasoning":false,"vision":false,"open":true,"ocr":null,"audio":false,"video":false,"imggen":false,"notes":"MIT-licensed; smallest context window in this table; efficient non-reasoning workhorse tier. Text-only \u2014 no image, audio, or video input."},{"name":"DeepSeek R1","vendor":"DeepSeek","in_price":0.55,"out_price":2.19,"cache":0.14,"context":64000,"intel":40,"speed":90,"ttft":1.8,"cutoff":"2024-2025 (exact date not separately published by DeepSeek)","released":"January 2025 (original R1); ongoing point releases since","eval_cost":null,"reasoning":true,"vision":false,"open":true,"ocr":null,"audio":false,"video":false,"imggen":false,"notes":"Reasoning-tuned; historically the lowest-cost route to o1-class reasoning quality; smallest context window here. Text-only."},{"name":"Mistral Large 3","vendor":"Mistral","in_price":0.5,"out_price":1.5,"cache":0.05,"context":256000,"intel":32,"speed":95,"ttft":1.1,"cutoff":"Mid-2025 (exact date not separately published by Mistral)","released":"December 2025","eval_cost":null,"reasoning":false,"vision":false,"open":true,"ocr":null,"audio":false,"video":false,"imggen":false,"notes":"Apache 2.0 licensed; selective-scale MoE; strong multilingual and long-document performance for self-hosted EU deployments. Text-only."},{"name":"Phi-4","vendor":"Microsoft","in_price":0.13,"out_price":0.5,"cache":null,"context":16000,"intel":5,"speed":35,"ttft":2.1,"cutoff":"June 2024","released":"January 10, 2025","eval_cost":null,"reasoning":false,"vision":false,"open":true,"ocr":null,"audio":false,"video":false,"imggen":false,"notes":"Small (14B) self-hostable model for narrow STEM/reasoning tasks; smallest context window tracked. Text-only."},{"name":"Command A","vendor":"Cohere","in_price":2.5,"out_price":10.0,"cache":null,"context":256000,"intel":8,"speed":68,"ttft":1.6,"cutoff":"June 1, 2024","released":"2025","eval_cost":null,"reasoning":false,"vision":false,"open":true,"ocr":null,"audio":false,"video":false,"imggen":false,"notes":"Cohere's enterprise RAG/tool-use workhorse; 111B params, requires 2 GPUs to self-host. Text-only \u2014 Cohere ships vision/audio as separate models (Command A Vision, Aya Vision, Transcribe), not in Command A itself."},{"name":"Command A+","vendor":"Cohere","in_price":2.5,"out_price":10.0,"cache":null,"context":200000,"intel":37,"speed":201,"ttft":0.35,"cutoff":"April 1, 2025","released":"May 20, 2026","eval_cost":null,"reasoning":true,"vision":true,"open":true,"ocr":null,"audio":false,"video":false,"imggen":false,"notes":"Cohere's first MoE and first Apache 2.0 frontier model; vision (image) + reasoning + agentic in one model \u2014 but no native audio or video."},{"name":"Qwen3.7 Max","vendor":"Alibaba","in_price":2.5,"out_price":7.5,"cache":null,"context":1000000,"intel":46,"speed":200,"ttft":2.6,"cutoff":"2025 (exact date not separately published by Alibaba)","released":"May 19, 2026","eval_cost":null,"reasoning":true,"vision":false,"open":false,"ocr":null,"audio":false,"video":false,"imggen":false,"notes":"Alibaba's flagship reasoning model; matches Gemini 3.1 Pro's Intelligence Index at unusually high speed. Text-only at the Max tier (smaller Qwen3.5 models do support image/video)."},{"name":"Grok 4.3","vendor":"xAI","in_price":1.25,"out_price":2.5,"cache":null,"context":1000000,"intel":38,"speed":139,"ttft":16.6,"cutoff":"Not independently confirmed","released":"April 30, 2026","eval_cost":null,"reasoning":true,"vision":true,"open":false,"ocr":null,"audio":false,"video":false,"imggen":true,"notes":"Strong intelligence-to-price ratio, but by far the slowest time-to-first-token tracked here. Image input + image generation (Aurora) in the xAI ecosystem; no native audio/video understanding."},{"name":"Nova Pro","vendor":"Amazon","in_price":0.8,"out_price":3.2,"cache":null,"context":300000,"intel":13,"speed":75,"ttft":1.5,"cutoff":"December 2024","released":"December 2024","eval_cost":200.98,"reasoning":false,"vision":true,"open":false,"ocr":null,"audio":false,"video":true,"imggen":false,"notes":"AWS-native multimodal model; priced and positioned for Bedrock-integrated enterprise workloads, not peak benchmark scores. Native image+video input; voice is a separate sibling model (Nova Sonic), not built into Nova Pro itself."},{"name":"Nova Micro","vendor":"Amazon","in_price":0.04,"out_price":0.14,"cache":null,"context":128000,"intel":10,"speed":300,"ttft":0.4,"cutoff":"December 2024","released":"December 2024","eval_cost":6.38,"reasoning":false,"vision":false,"open":false,"ocr":null,"audio":false,"video":false,"imggen":false,"notes":"Amazon's lowest-latency, lowest-cost, text-only Nova tier \u2014 no image, audio, or video input at all."},{"name":"Gemma 4 E4B","vendor":"Google","in_price":0.04,"out_price":0.08,"cache":null,"context":128000,"intel":15,"speed":140,"ttft":0.9,"cutoff":"January 2025","released":"April 2, 2026","eval_cost":null,"reasoning":false,"vision":true,"open":true,"ocr":null,"audio":true,"video":false,"imggen":false,"notes":"Google's edge/on-device SLM tier (4.5B effective, ~8B with embeddings); natively takes image+audio input, runs on phones via MediaPipe/LiteRT."},{"name":"Llama 3.2 3B","vendor":"Meta","in_price":0.02,"out_price":0.06,"cache":null,"context":128000,"intel":5,"speed":150,"ttft":0.6,"cutoff":"December 2023","released":"September 25, 2024","eval_cost":null,"reasoning":false,"vision":false,"open":true,"ocr":null,"audio":false,"video":false,"imggen":false,"notes":"Meta's smallest current edge/mobile tier; widest community fine-tune support of any model in this table, but the oldest cutoff and lowest measured intelligence."},{"name":"Qwen3.5 9B","vendor":"Alibaba","in_price":0.1,"out_price":0.3,"cache":null,"context":262000,"intel":32,"speed":90,"ttft":1.3,"cutoff":"2025 (exact date not separately published by Alibaba)","released":"March 2026","eval_cost":null,"reasoning":true,"vision":true,"open":true,"ocr":null,"audio":false,"video":false,"imggen":false,"notes":"The most intelligent model under 10B parameters tracked by Artificial Analysis at evaluation time; native vision, Apache 2.0, but uses notably more output tokens per task than peers."},{"name":"Ministral 3 8B","vendor":"Mistral","in_price":0.1,"out_price":0.1,"cache":null,"context":128000,"intel":15,"speed":110,"ttft":1.0,"cutoff":"Late 2025 (exact date not separately published by Mistral)","released":"December 2025","eval_cost":null,"reasoning":true,"vision":false,"open":true,"ocr":null,"audio":false,"video":false,"imggen":false,"notes":"Mistral's small-model tier (3B/8B/14B family); best cost-to-performance ratio Mistral has shipped at this size, per independent benchmarking."},{"name":"Granite 4.1 8B","vendor":"IBM","in_price":0.05,"out_price":0.1,"cache":null,"context":128000,"intel":12,"speed":130,"ttft":0.8,"cutoff":"2025 (exact date not separately published by IBM)","released":"April 2026","eval_cost":null,"reasoning":false,"vision":false,"open":true,"ocr":null,"audio":false,"video":false,"imggen":false,"notes":"IBM's enterprise-focused small model; lower raw intelligence than Ministral 3 8B or Gemma 4 E4B, but the most token-efficient model in this entire table (~4M tokens to run the full eval suite, vs. tens of millions for peers) \u2014 relevant if you pay per output token at volume."}],"usecases":[{"name":"FNOL triage","category":"Claims","complexity":3,"latency":4,"volume":4,"context":3,"regulated":true,"vision":false,"open_weight":false,"note":"High volume, moderate complexity intake routing.","keywords":["fnol","first notice of loss","claim intake","triage"],"audio":false,"video":false,"image_gen":false},{"name":"Underwriting document review","category":"Underwriting","complexity":4,"latency":2,"volume":2,"context":5,"regulated":true,"vision":false,"open_weight":false,"note":"Long documents + regulatory exposure favor accuracy over speed.","keywords":["underwriting review","submission review","doc review"],"audio":false,"video":false,"image_gen":false},{"name":"Commercial submission triage","category":"Underwriting","complexity":3,"latency":3,"volume":3,"context":5,"regulated":false,"vision":false,"open_weight":false,"note":"Large multi-document commercial submissions.","keywords":["commercial submission","submission triage"],"audio":false,"video":false,"image_gen":false},{"name":"Fraud ring detection","category":"Claims / SIU","complexity":4,"latency":3,"volume":3,"context":2,"regulated":true,"vision":false,"open_weight":false,"note":"Reasoning-heavy cross-referencing of linked entities.","keywords":["fraud detection","fraud ring","siu","special investigation"],"audio":false,"video":false,"image_gen":false},{"name":"Claims document brief","category":"Claims","complexity":3,"latency":3,"volume":3,"context":3,"regulated":true,"vision":false,"open_weight":false,"note":"Summarize a claim packet for an adjuster.","keywords":["claims brief","claim summary","adjuster brief"],"audio":false,"video":false,"image_gen":false},{"name":"Policy comparison (broker)","category":"Distribution","complexity":2,"latency":2,"volume":3,"context":3,"regulated":false,"vision":false,"open_weight":false,"note":"Line-by-line comparison against a standard form.","keywords":["policy comparison","broker comparison","coverage comparison"],"audio":false,"video":false,"image_gen":false},{"name":"Renewal data reconstruction","category":"Underwriting ops","complexity":3,"latency":2,"volume":2,"context":4,"regulated":false,"vision":false,"open_weight":false,"note":"Extract actuarial metrics from loss runs and filings.","keywords":["renewal data","loss run","data reconstruction"],"audio":false,"video":false,"image_gen":false},{"name":"Producer / agent copilot","category":"Distribution","complexity":2,"latency":3,"volume":4,"context":2,"regulated":false,"vision":false,"open_weight":false,"note":"RAG-style Q&A for producers over a knowledge base.","keywords":["agent copilot","producer copilot","agent assistant"],"audio":false,"video":false,"image_gen":false},{"name":"Customer self-service chat","category":"Service","complexity":1,"latency":5,"volume":5,"context":1,"regulated":false,"vision":false,"open_weight":false,"note":"Highest volume, lowest complexity, real-time.","keywords":["customer chat","chatbot","self service","support chat"],"audio":false,"video":false,"image_gen":false},{"name":"Regulatory filing review","category":"Compliance","complexity":5,"latency":1,"volume":1,"context":3,"regulated":true,"vision":false,"open_weight":false,"note":"Highest-stakes text accuracy use case.","keywords":["regulatory filing","compliance review","filing review"],"audio":false,"video":false,"image_gen":false},{"name":"Reinsurance treaty analysis","category":"Reinsurance","complexity":4,"latency":1,"volume":1,"context":5,"regulated":true,"vision":false,"open_weight":false,"note":"Multi-layer treaty programs need the largest context windows.","keywords":["reinsurance treaty","treaty analysis","cession"],"audio":false,"video":false,"image_gen":false},{"name":"Underwriting guideline Q&A","category":"Underwriting","complexity":2,"latency":3,"volume":4,"context":2,"regulated":false,"vision":false,"open_weight":false,"note":"RAG over a fixed underwriting guideline manual.","keywords":["underwriting guideline","guideline q&a","guideline lookup"],"audio":false,"video":false,"image_gen":false},{"name":"Accelerated life underwriting","category":"Life & Health","complexity":4,"latency":2,"volume":2,"context":4,"regulated":true,"vision":false,"open_weight":false,"note":"Regulated under NAIC AI Model Bulletin; medical record reasoning.","keywords":["life underwriting","accelerated underwriting","life insurance underwriting"],"audio":false,"video":false,"image_gen":false},{"name":"Protective value / mortality analysis","category":"Life & Health","complexity":5,"latency":1,"volume":1,"context":3,"regulated":true,"vision":false,"open_weight":false,"note":"Highest reasoning depth; medical impairment scoring.","keywords":["mortality analysis","protective value","impairment scoring"],"audio":false,"video":false,"image_gen":false},{"name":"Subrogation & litigation correspondence","category":"Claims / Legal","complexity":2,"latency":3,"volume":3,"context":2,"regulated":false,"vision":false,"open_weight":false,"note":"Drafting-heavy correspondence at moderate stakes.","keywords":["subrogation","litigation correspondence","demand letter"],"audio":false,"video":false,"image_gen":false},{"name":"Property risk modeling (imagery)","category":"Underwriting","complexity":3,"latency":2,"volume":3,"context":2,"regulated":false,"vision":true,"open_weight":false,"note":"Aerial/satellite imagery analysis at scale.","keywords":["property risk","aerial imagery","satellite imagery","roof imagery"],"audio":false,"video":false,"image_gen":false},{"name":"Portfolio appetite summarization","category":"Underwriting leadership","complexity":3,"latency":1,"volume":1,"context":4,"regulated":false,"vision":false,"open_weight":false,"note":"Long-document synthesis for leadership-facing output.","keywords":["portfolio appetite","book summary","appetite summary"],"audio":false,"video":false,"image_gen":false},{"name":"ACORD / invoice OCR","category":"Document processing","complexity":3,"latency":3,"volume":4,"context":2,"regulated":true,"vision":true,"open_weight":false,"note":"Vision-heavy intake; measured OCR accuracy matters.","keywords":["acord","invoice ocr","ocr","invoice processing"],"audio":false,"video":false,"image_gen":false},{"name":"Policy document digitization","category":"Document processing","complexity":3,"latency":2,"volume":3,"context":3,"regulated":true,"vision":true,"open_weight":false,"note":"Self-hosting may be required for data residency.","keywords":["policy digitization","document digitization","scan processing"],"audio":false,"video":false,"image_gen":false},{"name":"Claim packet synthesis","category":"Claims","complexity":4,"latency":3,"volume":3,"context":4,"regulated":true,"vision":true,"open_weight":false,"note":"Cross-document contradiction-finding across a full packet.","keywords":["claim packet","packet synthesis","multi-document claim"],"audio":false,"video":false,"image_gen":false},{"name":"Telematics-based dynamic pricing","category":"Pricing","complexity":4,"latency":2,"volume":4,"context":2,"regulated":true,"vision":false,"open_weight":false,"note":"Numeric reasoning over streaming data plus rate justification.","keywords":["telematics","dynamic pricing","usage based insurance","ubi"],"audio":false,"video":false,"image_gen":false},{"name":"Actuarial experience studies","category":"Actuarial","complexity":4,"latency":1,"volume":1,"context":5,"regulated":false,"vision":false,"open_weight":false,"note":"Large structured datasets across many cuts.","keywords":["actuarial study","experience study","loss ratio analysis"],"audio":false,"video":false,"image_gen":false},{"name":"Propensity to buy / renew / lapse","category":"Distribution / Retention","complexity":2,"latency":3,"volume":4,"context":2,"regulated":false,"vision":false,"open_weight":false,"note":"High-volume scoring at moderate complexity.","keywords":["propensity model","renewal propensity","lapse prediction","retention"],"audio":false,"video":false,"image_gen":false},{"name":"Renewal letter & coverage-gap generation","category":"Service / Retention","complexity":1,"latency":3,"volume":5,"context":1,"regulated":false,"vision":false,"open_weight":false,"note":"Templated, personalized drafting at scale.","keywords":["renewal letter","coverage gap","renewal communication"],"audio":false,"video":false,"image_gen":false},{"name":"Parametric claims triggers","category":"Claims / Product","complexity":3,"latency":4,"volume":3,"context":1,"regulated":true,"vision":false,"open_weight":false,"note":"Validate a data trigger against policy terms.","keywords":["parametric insurance","parametric trigger","index trigger"],"audio":false,"video":false,"image_gen":false},{"name":"Algorithmic bias / discrimination testing","category":"Compliance / Actuarial","complexity":5,"latency":1,"volume":1,"context":3,"regulated":true,"vision":false,"open_weight":false,"note":"Highest-stakes reasoning; active litigation risk.","keywords":["bias testing","discrimination testing","algorithmic bias","model fairness"],"audio":false,"video":false,"image_gen":false},{"name":"AI/cyber liability underwriting","category":"Underwriting (Specialty)","complexity":5,"latency":1,"volume":1,"context":3,"regulated":true,"vision":false,"open_weight":false,"note":"Evaluating a counterparty's own AI usage and exposure.","keywords":["cyber liability","ai liability underwriting","tech e&o"],"audio":false,"video":false,"image_gen":false},{"name":"Specialty risk engineering reports","category":"Underwriting (Specialty)","complexity":4,"latency":1,"volume":2,"context":5,"regulated":false,"vision":false,"open_weight":false,"note":"Long technical reports synthesized into a risk assessment.","keywords":["risk engineering","specialty underwriting report"],"audio":false,"video":false,"image_gen":false},{"name":"Predictive win-rate quoting","category":"Underwriting / Distribution","complexity":3,"latency":2,"volume":3,"context":2,"regulated":false,"vision":false,"open_weight":false,"note":"Structured scoring at submission volume.","keywords":["win rate","predictive quoting","quote scoring"],"audio":false,"video":false,"image_gen":false},{"name":"Cross-sell / next-best-product","category":"Distribution (Agency)","complexity":2,"latency":3,"volume":4,"context":1,"regulated":false,"vision":false,"open_weight":false,"note":"High-volume propensity scoring across a book of business.","keywords":["cross sell","next best product","upsell"],"audio":false,"video":false,"image_gen":false},{"name":"Agentic quote-and-bind work cells","category":"Underwriting (Simple risks)","complexity":5,"latency":2,"volume":2,"context":2,"regulated":true,"vision":false,"open_weight":false,"note":"Multi-step autonomous action; least-proven category, keep supervised.","keywords":["quote and bind","agentic underwriting","autonomous quoting"],"audio":false,"video":false,"image_gen":false},{"name":"Synthetic media detection in claims","category":"Claims / SIU","complexity":4,"latency":2,"volume":2,"context":2,"regulated":true,"vision":true,"open_weight":false,"note":"Deepfake/staged-image detection is multimodal reasoning.","keywords":["synthetic media","deepfake detection","staged accident","manipulated photo"],"audio":false,"video":false,"image_gen":false},{"name":"Call center voice transcription & QA","category":"Service / Compliance","complexity":3,"latency":3,"volume":4,"context":2,"regulated":true,"vision":false,"open_weight":false,"note":"Needs native audio understanding (tone, overlapping speakers, hold music) for accurate QA scoring, not just word-for-word transcription.","keywords":["voice transcription","call center","call recording","ivr","phone call analysis","voice qa"],"audio":true,"video":false,"image_gen":false},{"name":"Video-based property/vehicle inspection","category":"Claims / Underwriting","complexity":4,"latency":2,"volume":2,"context":2,"regulated":false,"vision":true,"open_weight":false,"note":"Walkthrough video of property or vehicle damage analyzed directly, without manual frame extraction.","keywords":["video inspection","drone footage","video walkthrough","vehicle damage video","site inspection video"],"audio":false,"video":true,"image_gen":false},{"name":"Telehealth / virtual claims consultation analysis","category":"Claims / Life & Health","complexity":4,"latency":2,"volume":1,"context":2,"regulated":true,"vision":true,"open_weight":false,"note":"Recorded virtual consultations combine speech and visual cues (injury demonstration, document holding) in one stream.","keywords":["telehealth","virtual consultation","video call analysis","remote medical assessment"],"audio":true,"video":true,"image_gen":false},{"name":"Marketing image generation for campaigns","category":"Marketing / Distribution","complexity":2,"latency":1,"volume":2,"context":1,"regulated":false,"vision":false,"open_weight":false,"note":"Generating on-brand visual assets for agent/broker marketing materials, not analyzing existing images.","keywords":["image generation","marketing visuals","ad creative","generate image","campaign graphics"],"audio":false,"video":false,"image_gen":true},{"name":"Branch/claims-center signage and document mockups","category":"Operations / Marketing","complexity":1,"latency":1,"volume":1,"context":1,"regulated":false,"vision":false,"open_weight":false,"note":"Low-stakes internal visual asset creation; any image-generation-capable model is overkill-proof here.","keywords":["signage","mockup","document template image","internal graphics"],"audio":false,"video":false,"image_gen":true}],"slm":["Gemma 4 E4B","Llama 3.2 3B","Qwen3.5 9B","Ministral 3 8B","Granite 4.1 8B"]};
+const MODELS = DATA.models, USE_CASES = DATA.usecases, SLM = new Set(DATA.slm);
+
+/* ================= scoring engine (1:1 port of model_advisor.py) ================= */
+const INTEL_TARGET = {1:15,2:25,3:35,4:45,5:55};
+const CTX_FLOOR = {1:8000,2:32000,3:200000,4:1000000,5:2000000};
+const VOL_TOKENS = {1:[5e6,2e6],2:[20e6,8e6],3:[60e6,24e6],4:[150e6,60e6],5:[400e6,160e6]};
+const PTU_COST = {hourly:3.35, monthly_reservation:2.02, annual_reservation:1.31};
+const TPM_PER_PTU = {"Claude Haiku 4.5":2500,"Claude Sonnet 4.6":2000,"Claude Opus 4.7":1200,
+ "GPT-5.4 mini":3000,"GPT-5.4":2500,"GPT-5.5":2200,"Gemini 3.1 Flash-Lite":3500,"Gemini 3.1 Pro":2200,
+ "Llama 4 Scout":2800,"Llama 4 Maverick":2400,"DeepSeek V3.2":2600,"DeepSeek R1":2000,
+ "Mistral Large 3":2300,"Phi-4":4000,"Command A":2400,"Command A+":2600,"Qwen3.7 Max":2200,
+ "Grok 4.3":2000,"Nova Pro":2400,"Nova Micro":4000,"Gemma 4 E4B":3800,"Llama 3.2 3B":4200,
+ "Qwen3.5 9B":2900,"Ministral 3 8B":3400,"Granite 4.1 8B":3600};
+const TPM_FALLBACK = 2500;
+
+const blended = m => (m.cache!=null?m.cache:m.in_price)*0.7 + m.in_price*0.2 + m.out_price*0.1;
+const isSlm = m => SLM.has(m.name);
+
+function scoreModel(m, uc){
+  let s = 0;
+  const intel = m.intel!=null ? m.intel : INTEL_TARGET[3];
+  const target = INTEL_TARGET[uc.complexity];
+  s -= Math.abs(intel-target)*1.3;
+  if (intel < target-10) s -= 25;
+  s -= m.ttft*0.8;
+  if (uc.latency>=4) s += Math.min(m.speed/4,40) - m.ttft*3;
+  if (uc.volume>=4) s -= (m.out_price/2 + m.in_price)*2.5;
+  const need = CTX_FLOOR[uc.context];
+  if (m.context < need) s -= 45; else s += Math.min((m.context-need)/500000, 6);
+  if (uc.regulated && !m.reasoning && uc.complexity>=3) s -= 10;
+  if (uc.regulated && m.vendor==="Anthropic") s += 6;
+  if (uc.vision){
+    if (!m.vision) s -= 100;
+    else if (m.ocr) s += (m.ocr-85)*2.2;
+    else s -= 6;
+  }
+  if (uc.open_weight && !m.open) s -= 60;
+  if (uc.audio && !m.audio) s -= 120;
+  if (uc.video && !m.video) s -= 120;
+  if (uc.image_gen && !m.imggen) s -= 80;
+  return s;
+}
+const rankModels = uc => MODELS.map(m=>[m,scoreModel(m,uc)]).sort((a,b)=>b[1]-a[1]);
+
+function findUseCase(q){
+  q = q.toLowerCase().trim();
+  for (const uc of USE_CASES) if (uc.name.toLowerCase()===q) return uc;
+  for (const uc of USE_CASES) if (uc.keywords.some(k=>q.includes(k)||k.includes(q))) return uc;
+  for (const uc of USE_CASES) if (uc.name.toLowerCase().includes(q)||q.includes(uc.name.toLowerCase())) return uc;
+  return null;
+}
+const hasAny = (q,...w) => w.some(x=>q.includes(x));
+function guessUseCase(q){
+  const l = q.toLowerCase();
+  let cx=3, lt=3, vol=3, ctx=2;
+  if (hasAny(l,"simple","basic","lookup","classify","classification","routing")) cx=2;
+  if (hasAny(l,"reasoning","complex","analysis","investigat","fraud","legal","compliance","regulat")) cx=4;
+  if (hasAny(l,"highest stakes","bias","discrimination","litigation","audit")) cx=5;
+  if (hasAny(l,"real time","real-time","chat","instant","live")) lt=5;
+  if (hasAny(l,"batch","overnight","offline","report")) lt=1;
+  if (hasAny(l,"high volume","scale","millions","thousands of","every customer")) vol=4;
+  if (hasAny(l,"low volume","occasional","rare","few")) vol=1;
+  if (hasAny(l,"long document","large document","treaty","full file","entire","huge","big context")) ctx=4;
+  if (hasAny(l,"short","single field","one line")) ctx=1;
+  return {
+    name:'Custom: "'+q.trim()+'"', category:"Ad hoc", complexity:cx, latency:lt, volume:vol, context:ctx,
+    regulated:hasAny(l,"regulat","compliance","audit","legal","underwrit","pricing","bias","discrimination","medical","claim denial","rate"),
+    vision:hasAny(l,"image","photo","scan","pdf","ocr","document","invoice","form","imagery"),
+    audio:hasAny(l,"audio","voice","call recording","transcri","speech","phone call","ivr"),
+    video:hasAny(l,"video","footage","drone","walkthrough","recording of"),
+    image_gen:hasAny(l,"generate an image","generate image","create an image","image generation","marketing visual","graphic design","ad creative","mockup image"),
+    open_weight:hasAny(l,"self-host","self host","on-prem","on prem","data residency","open weight","open-weight"),
+    note:"No exact match in the known use-case list — best-effort read of your description.", keywords:[]
+  };
+}
+function comparePtu(m, ptus, hrCost, tpmPtu, outWeight, monIn, monOut){
+  const w = outWeight!=null ? outWeight : (m.in_price ? m.out_price/m.in_price : 4.0);
+  const tpm1 = tpmPtu!=null ? tpmPtu : (TPM_PER_PTU[m.name]||TPM_FALLBACK);
+  const minutes = 730*60;
+  const reqTpm = (monIn + monOut*w)/minutes;
+  const availTpm = tpm1*ptus;
+  const util = availTpm ? reqTpm/availTpm : Infinity;
+  const ptuCost = ptus*hrCost*730;
+  const paygCost = monIn/1e6*m.in_price + monOut/1e6*m.out_price;
+  let cheaper = ptuCost < paygCost ? "PTU" : "PAYG";
+  let savings = Math.abs(ptuCost-paygCost);
+  let pct = Math.max(ptuCost,paygCost) ? savings/Math.max(ptuCost,paygCost)*100 : 0;
+  if (ptus<=0){ cheaper="PAYG"; savings=paygCost; pct=paygCost>0?100:0; }
+  return {reqTpm, availTpm, util, ptuCost, paygCost, cheaper, savings, pct,
+          covers: availTpm>=reqTpm, ptusNeeded: reqTpm/tpm1, tpm1, w};
+}
+
+/* ================= UI state & rendering ================= */
+const fmt$ = x => "$"+x.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2});
+const fmtN = x => Math.round(x).toLocaleString();
+const fmtCtx = n => n>=1e6 ? (n/1e6)+"M" : Math.round(n/1e3)+"K";
+let currentUc = null, currentTop = null, edited = {};
+
+function runQuery(){
+  const q = document.getElementById("ucInput").value.trim();
+  if (!q) return;
+  currentUc = findUseCase(q) || guessUseCase(q);
+  edited = {};                       // fresh use case -> fresh planning estimates
+  renderRecommendation();
+}
+
+function renderRecommendation(){
+  const uc = currentUc;
+  const slmOnly = document.getElementById("slmOnly").checked;
+  const topN = +document.getElementById("topN").value;
+  let ranked = rankModels(uc);
+  if (slmOnly) ranked = ranked.filter(([m])=>isSlm(m));
+  const [top] = ranked[0];
+  const runner = ranked[1] ? ranked[1][0] : top;
+  currentTop = top;
+
+  const flags = [];
+  if (uc.regulated) flags.push("regulated/auditable");
+  if (uc.vision) flags.push("vision/document input");
+  if (uc.audio) flags.push("native audio");
+  if (uc.video) flags.push("native video");
+  if (uc.image_gen) flags.push("image generation");
+  if (uc.open_weight) flags.push("open weights / self-hosting");
+  document.getElementById("profileBar").innerHTML =
+    `<b>${uc.name}</b> &nbsp;·&nbsp; ${uc.category}` +
+    ` &nbsp;·&nbsp; complexity <b>${uc.complexity}/5</b> · latency <b>${uc.latency}/5</b> · volume <b>${uc.volume}/5</b> · context <b>${uc.context}/5</b>` +
+    ` &nbsp;·&nbsp; flags: <b>${flags.length?flags.join(", "):"none"}</b>` +
+    (uc.note ? `<br><span style="font-style:italic">${uc.note}</span>` : "");
+
+  document.getElementById("recoName").innerHTML = top.name +
+    (isSlm(top) ? '<span class="badge">SLM TIER</span>' : "") +
+    (slmOnly ? '<span class="badge" style="background:var(--ice);color:var(--navy)">SLM-ONLY RANKING</span>' : "");
+  document.getElementById("recoVendor").textContent = top.vendor;
+  document.getElementById("recoSpecs").innerHTML = `
+    <div><b>${top.intel!=null?top.intel:"n/a"}</b><span>Intelligence Index</span></div>
+    <div><b>${fmt$(top.in_price)}</b><span>Input $/M</span></div>
+    <div><b>${fmt$(top.out_price)}</b><span>Output $/M</span></div>
+    <div><b>${fmtCtx(top.context)}</b><span>Context window</span></div>
+    <div><b>${top.speed}</b><span>tok/s output</span></div>
+    <div><b>${top.ttft}s</b><span>time to first token</span></div>`;
+  document.getElementById("recoNote").textContent = top.notes;
+
+  document.getElementById("runnerName").textContent = runner.name + " ("+runner.vendor+")";
+  const rWhy = (runner.intel||0) > (top.intel||0) ? "higher measured intelligence"
+    : blended(runner) < blended(top) ? "a lower blended price"
+    : runner.context > top.context ? "a larger context window" : "a different latency profile";
+  document.getElementById("runnerWhy").textContent = "Consider if you need " + rWhy +
+    ` — ${fmt$(runner.in_price)}/M in, ${fmt$(runner.out_price)}/M out, Intelligence ${runner.intel!=null?runner.intel:"n/a"}.`;
+
+  const slmCard = document.getElementById("slmCard");
+  if (slmOnly){ slmCard.style.display = "none"; }
+  else {
+    const full = rankModels(uc);
+    const idx = full.findIndex(([m])=>isSlm(m));
+    const [sm] = full[idx];
+    let note = idx < 3 ? "Already a top-3 fit — a strong cost play at this volume and complexity."
+      : uc.complexity>=4 ? `Complexity ${uc.complexity}/5 likely exceeds the SLM tier — use only with narrow fine-tuning and a strong eval harness.`
+      : "Worth benchmarking on your own documents if cost or self-hosting dominates.";
+    slmCard.style.display = "block";
+    document.getElementById("slmName").textContent = `${sm.name} — ranked #${idx+1} overall`;
+    document.getElementById("slmWhy").textContent =
+      `${fmt$(sm.in_price)}/M in, ${fmt$(sm.out_price)}/M out, Intelligence ${sm.intel!=null?sm.intel:"n/a"}, open weights: ${sm.open?"yes":"no"}. ${note}`;
+  }
+
+  const adv = document.getElementById("regAdvisory");
+  if (uc.regulated){
+    adv.style.display = "block";
+    adv.innerHTML = "<b>Regulated workflow:</b> log prompts, model version, and output; keep a human in the loop on edge cases; document a model card for audit." +
+      (uc.complexity===5 ? " High complexity + regulated: treat model output as analysis feeding an actuary or compliance sign-off — never the decision itself." : "");
+  } else adv.style.display = "none";
+
+  let rows = `<tr><th>#</th><th>Model</th><th>Vendor</th><th class="num">In $/M</th><th class="num">Out $/M</th><th class="num">Blended</th><th class="num">Context</th><th class="num">Intel.</th><th class="num">tok/s</th><th class="num">TTFT</th><th>Open</th></tr>`;
+  ranked.slice(0,topN).forEach(([m],i)=>{
+    rows += `<tr><td>${i+1}</td><td>${m.name}${isSlm(m)?' <span class="slmstar">*</span>':""}</td><td>${m.vendor}</td>
+      <td class="num">${m.in_price.toFixed(2)}</td><td class="num">${m.out_price.toFixed(2)}</td>
+      <td class="num">${blended(m).toFixed(3)}</td><td class="num">${m.context.toLocaleString()}</td>
+      <td class="num">${m.intel!=null?m.intel:"n/a"}</td><td class="num">${m.speed}</td>
+      <td class="num">${m.ttft.toFixed(1)}s</td><td>${m.open?"yes":"—"}</td></tr>`;
+  });
+  document.getElementById("rankTable").innerHTML = rows;
+  document.getElementById("results").style.display = "block";
+
+  // ---- auto-populate PTU section from this use case ----
+  const [ein, eout] = VOL_TOKENS[uc.volume] || VOL_TOKENS[3];
+  if (!edited.monIn) document.getElementById("monIn").value = ein;
+  if (!edited.monOut) document.getElementById("monOut").value = eout;
+  document.getElementById("h-monIn").textContent = edited.monIn ? "your value" : `planning estimate from volume tier ${uc.volume}/5`;
+  document.getElementById("h-monOut").textContent = edited.monOut ? "your value" : `planning estimate from volume tier ${uc.volume}/5`;
+  document.getElementById("h-monIn").className = "hint"+(edited.monIn?" yours":"");
+  document.getElementById("h-monOut").className = "hint"+(edited.monOut?" yours":"");
+  document.getElementById("ptuTitle").textContent = `PTU vs. pay-as-you-go — ${top.name}`;
+  document.getElementById("ptuSection").style.display = "block";
+  updatePtu();
+  document.getElementById("results").scrollIntoView({behavior:"smooth", block:"start"});
+}
+
+function markYours(id){ edited[id]=true;
+  const h = document.getElementById("h-"+id);
+  if (h){ h.textContent = "your value"; h.className = "hint yours"; }
+}
+
+function updatePtu(){
+  if (!currentTop) return;
+  const m = currentTop;
+  const ptus = parseFloat(document.getElementById("ptus").value) || 0;
+  const billing = document.getElementById("billing").value;
+  const costOv = parseFloat(document.getElementById("ptuCost").value);
+  const hrCost = isNaN(costOv) ? PTU_COST[billing] : costOv;
+  const tpmOv = parseFloat(document.getElementById("tpmPtu").value);
+  const monIn = parseFloat(document.getElementById("monIn").value) || 0;
+  const monOut = parseFloat(document.getElementById("monOut").value) || 0;
+  const r = comparePtu(m, ptus, hrCost, isNaN(tpmOv)?null:tpmOv, null, monIn, monOut);
+
+  document.getElementById("reqTpm").textContent = fmtN(r.reqTpm);
+  document.getElementById("availTpm").textContent = fmtN(r.availTpm);
+  document.getElementById("util").textContent = isFinite(r.util) ? (r.util*100).toFixed(1)+"%" : "—";
+  document.getElementById("ptuCostOut").textContent = fmt$(r.ptuCost);
+  document.getElementById("paygCostOut").textContent = fmt$(r.paygCost);
+
+  const v = document.getElementById("verdict"), vs = document.getElementById("vSide"), vb = document.getElementById("vBody");
+  if (ptus<=0){
+    v.className = "payg"; vs.textContent = "PAYG";
+    vb.innerHTML = `0 PTUs provides no capacity — per-token billing is the only option, at <b>${fmt$(r.paygCost)}/month</b> for this volume.`;
+  } else if (r.cheaper==="PAYG"){
+    v.className = "payg"; vs.textContent = "PAYG";
+    vb.innerHTML = `<b>Pay-as-you-go is cheaper for this use case</b>, by ${fmt$(r.savings)}/month (${r.pct.toFixed(1)}%). `+
+      (isFinite(r.util)&&r.util<0.5 ? `PTU utilization would only be ${(r.util*100).toFixed(1)}% — reserved capacity typically only wins at sustained high utilization (roughly &gt;60–70% around the clock).` : "");
+  } else {
+    v.className = "ptu"; vs.textContent = "PTU";
+    vb.innerHTML = `<b>Reserved capacity (PTU) is cheaper for this use case</b>, by ${fmt$(r.savings)}/month (${r.pct.toFixed(1)}%).`;
+  }
+  const c = document.getElementById("cautions");
+  const notes = [];
+  if (ptus>0 && !r.covers) notes.push(`This volume needs ~${r.ptusNeeded.toFixed(1)} PTUs to be fully covered — the ${ptus} evaluated would overflow to PAYG for the excess.`);
+  if (ptus>0 && r.cheaper==="PTU" && isFinite(r.util) && r.util<0.5) notes.push("Utilization is under 50% — re-check once you have real traffic data.");
+  if (notes.length){ c.style.display="block"; c.innerHTML = "⚠ " + notes.join("<br>⚠ "); } else c.style.display="none";
+}
+
+/* ================= chips + all-models table ================= */
+const POPULAR = ["FNOL triage","ACORD / invoice OCR","Customer self-service chat","Reinsurance treaty analysis",
+  "Underwriting document review","Fraud ring detection","Call center voice transcription & QA","Regulatory filing review",
+  "Renewal letter & coverage-gap generation","Marketing image generation for campaigns"];
+const chipBox = document.getElementById("chips");
+POPULAR.forEach(n=>{
+  const b = document.createElement("button"); b.className="chip"; b.textContent=n;
+  b.onclick = ()=>{ document.getElementById("ucInput").value=n; runQuery(); };
+  chipBox.appendChild(b);
+});
+document.getElementById("ucInput").addEventListener("keydown", e=>{ if(e.key==="Enter") runQuery(); });
+
+const vendorSel = document.getElementById("fVendor");
+[...new Set(MODELS.map(m=>m.vendor))].sort().forEach(v=>{
+  const o = document.createElement("option"); o.value=v; o.textContent=v; vendorSel.appendChild(o);
+});
+function renderModelTable(){
+  const fv = vendorSel.value, fo = document.getElementById("fOpen").checked,
+        fvi = document.getElementById("fVision").checked, fs = document.getElementById("fSlm").checked;
+  let rows = `<tr><th>Model</th><th>Vendor</th><th class="num">In $/M</th><th class="num">Out $/M</th><th class="num">Blended</th><th class="num">Cache</th><th class="num">Context</th><th class="num">Intel.</th><th class="num">tok/s</th><th class="num">TTFT</th><th>Open</th><th>Vision</th><th>Audio</th><th>Video</th></tr>`;
+  MODELS.filter(m => (!fv||m.vendor===fv)&&(!fo||m.open)&&(!fvi||m.vision)&&(!fs||isSlm(m))).forEach(m=>{
+    rows += `<tr><td>${m.name}${isSlm(m)?' <span class="slmstar">*</span>':""}</td><td>${m.vendor}</td>
+      <td class="num">${m.in_price.toFixed(2)}</td><td class="num">${m.out_price.toFixed(2)}</td>
+      <td class="num">${blended(m).toFixed(3)}</td><td class="num">${m.cache!=null?m.cache.toFixed(3):"n/a"}</td>
+      <td class="num">${m.context.toLocaleString()}</td><td class="num">${m.intel!=null?m.intel:"n/a"}</td>
+      <td class="num">${m.speed}</td><td class="num">${m.ttft.toFixed(1)}s</td>
+      <td>${m.open?"yes":"—"}</td><td>${m.vision?"yes":"—"}</td><td>${m.audio?"yes":"—"}</td><td>${m.video?"yes":"—"}</td></tr>`;
+  });
+  document.getElementById("modelTable").innerHTML = rows;
+}
+renderModelTable();
+</script>
+</body>
+</html>
