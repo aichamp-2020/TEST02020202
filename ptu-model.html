@@ -1,0 +1,632 @@
+<meta charset="UTF-8">
+<title>PTU Capacity Model — compare any models</title>
+<style>
+  :root {
+    --bg: #eef1f4;
+    --surface: #ffffff;
+    --surface-2: #f7f9fb;
+    --ink: #16202b;
+    --ink-muted: #57626f;
+    --line: #d7dee4;
+    --line-strong: #b9c3cb;
+    --accent-gpt: #5b3fe0;   --accent-gpt-soft: rgba(91, 63, 224, .09);
+    --accent-mini: #0e8f86;  --accent-mini-soft: rgba(14, 143, 134, .09);
+    --accent-3: #a9660e;     --accent-3-soft: rgba(169, 102, 14, .09);
+    --accent-4: #b23a66;     --accent-4-soft: rgba(178, 58, 102, .09);
+    --accent-5: #2e6fa7;     --accent-5-soft: rgba(46, 111, 167, .09);
+    --accent-6: #6b7a1f;     --accent-6-soft: rgba(107, 122, 31, .09);
+    --pos: #1f8a4c; --pos-soft: rgba(31, 138, 76, .12);
+    --neg: #c33b2e; --neg-soft: rgba(195, 59, 46, .12);
+    --shadow: 0 1px 2px rgba(20, 30, 40, .06), 0 8px 24px rgba(20, 30, 40, .05);
+    --font-display: ui-serif, "Iowan Old Style", "Palatino Linotype", Georgia, "Noto Serif", serif;
+    --font-body: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    --font-mono: ui-monospace, "SF Mono", "Cascadia Code", "Roboto Mono", Consolas, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0e141b; --surface: #141c25; --surface-2: #101720; --ink: #e7ecf1; --ink-muted: #9aa7b4;
+      --line: #26313d; --line-strong: #37424e;
+      --accent-gpt: #8c77ff;  --accent-gpt-soft: rgba(140, 119, 255, .14);
+      --accent-mini: #37c9bd; --accent-mini-soft: rgba(55, 201, 189, .14);
+      --accent-3: #e3a344; --accent-3-soft: rgba(227, 163, 68, .14);
+      --accent-4: #e37aa8; --accent-4-soft: rgba(227, 122, 168, .14);
+      --accent-5: #6fa8e0; --accent-5-soft: rgba(111, 168, 224, .14);
+      --accent-6: #a8be4e; --accent-6-soft: rgba(168, 190, 78, .14);
+      --pos: #3fbe73; --pos-soft: rgba(63, 190, 115, .16);
+      --neg: #e2665a; --neg-soft: rgba(226, 102, 90, .16);
+      --shadow: 0 1px 2px rgba(0, 0, 0, .3), 0 8px 24px rgba(0, 0, 0, .35);
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #0e141b; --surface: #141c25; --surface-2: #101720; --ink: #e7ecf1; --ink-muted: #9aa7b4;
+    --line: #26313d; --line-strong: #37424e;
+    --accent-gpt: #8c77ff; --accent-gpt-soft: rgba(140, 119, 255, .14);
+    --accent-mini: #37c9bd; --accent-mini-soft: rgba(55, 201, 189, .14);
+    --accent-3: #e3a344; --accent-3-soft: rgba(227, 163, 68, .14);
+    --accent-4: #e37aa8; --accent-4-soft: rgba(227, 122, 168, .14);
+    --accent-5: #6fa8e0; --accent-5-soft: rgba(111, 168, 224, .14);
+    --accent-6: #a8be4e; --accent-6-soft: rgba(168, 190, 78, .14);
+    --pos: #3fbe73; --pos-soft: rgba(63, 190, 115, .16);
+    --neg: #e2665a; --neg-soft: rgba(226, 102, 90, .16);
+    --shadow: 0 1px 2px rgba(0, 0, 0, .3), 0 8px 24px rgba(0, 0, 0, .35);
+  }
+  :root[data-theme="light"] {
+    --bg: #eef1f4; --surface: #ffffff; --surface-2: #f7f9fb; --ink: #16202b; --ink-muted: #57626f;
+    --line: #d7dee4; --line-strong: #b9c3cb;
+    --accent-gpt: #5b3fe0; --accent-gpt-soft: rgba(91, 63, 224, .09);
+    --accent-mini: #0e8f86; --accent-mini-soft: rgba(14, 143, 134, .09);
+    --accent-3: #a9660e; --accent-3-soft: rgba(169, 102, 14, .09);
+    --accent-4: #b23a66; --accent-4-soft: rgba(178, 58, 102, .09);
+    --accent-5: #2e6fa7; --accent-5-soft: rgba(46, 111, 167, .09);
+    --accent-6: #6b7a1f; --accent-6-soft: rgba(107, 122, 31, .09);
+    --pos: #1f8a4c; --pos-soft: rgba(31, 138, 76, .12);
+    --neg: #c33b2e; --neg-soft: rgba(195, 59, 46, .12);
+    --shadow: 0 1px 2px rgba(20, 30, 40, .06), 0 8px 24px rgba(20, 30, 40, .05);
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    background: var(--bg);
+    color: var(--ink);
+    font-family: var(--font-body);
+    line-height: 1.5;
+    padding: 48px 20px 96px;
+  }
+  .wrap { max-width: 1040px; margin: 0 auto; display: flex; flex-direction: column; gap: 40px; }
+
+  .eyebrow { font-family: var(--font-mono); font-size: 11px; letter-spacing: .12em; text-transform: uppercase; color: var(--ink-muted); }
+  h1 { font-family: var(--font-display); font-weight: 600; font-size: clamp(26px, 4vw, 38px); margin: 6px 0 10px; text-wrap: balance; }
+  .thesis { color: var(--ink-muted); font-size: 15.5px; max-width: 66ch; }
+  .thesis strong { color: var(--ink); font-weight: 600; }
+
+  section { display: flex; flex-direction: column; gap: 14px; }
+  h2 { font-family: var(--font-display); font-weight: 600; font-size: 19px; margin: 0; }
+  .section-note { color: var(--ink-muted); font-size: 13px; max-width: 72ch; }
+
+  .card { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; box-shadow: var(--shadow); padding: 22px 24px; }
+
+  /* Assumptions panel */
+  .assumptions-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(148px, 1fr)); gap: 16px; }
+  .field { display: flex; flex-direction: column; gap: 5px; }
+  .field label { font-family: var(--font-mono); font-size: 10.5px; letter-spacing: .06em; text-transform: uppercase; color: var(--ink-muted); }
+  .field input {
+    font-family: var(--font-mono); font-variant-numeric: tabular-nums; font-size: 15px; color: var(--ink);
+    background: var(--surface-2); border: 1px solid var(--line); border-radius: 6px; padding: 8px 10px; width: 100%;
+  }
+  .field input:focus-visible { outline: 2px solid var(--accent-mini); outline-offset: 1px; }
+  .reset-row { display: flex; justify-content: flex-end; }
+  button.reset, button.add-model {
+    font-family: var(--font-body); font-size: 12.5px; color: var(--ink-muted); background: transparent;
+    border: 1px solid var(--line); border-radius: 6px; padding: 6px 12px; cursor: pointer;
+  }
+  button.reset:hover, button.add-model:hover { border-color: var(--line-strong); color: var(--ink); }
+  button.reset:focus-visible, button.add-model:focus-visible { outline: 2px solid var(--accent-mini); outline-offset: 2px; }
+  button.add-model { color: var(--ink); border-color: var(--line-strong); }
+  select.catalog-select {
+    font-family: var(--font-body); font-size: 12.5px; color: var(--ink); background: var(--surface-2);
+    border: 1px solid var(--line-strong); border-radius: 6px; padding: 7px 10px; cursor: pointer; max-width: 260px;
+  }
+  select.catalog-select:hover { border-color: var(--ink-muted); }
+  select.catalog-select:focus-visible { outline: 2px solid var(--accent-mini); outline-offset: 2px; }
+
+  /* Models editor */
+  .models-table { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+  .models-table th {
+    text-align: left; font-family: var(--font-mono); font-size: 10.5px; letter-spacing: .05em; text-transform: uppercase;
+    color: var(--ink-muted); font-weight: 500; padding: 0 10px 8px; border-bottom: 1px solid var(--line-strong);
+  }
+  .models-table td { padding: 8px 10px; border-bottom: 1px solid var(--line); vertical-align: middle; }
+  .models-table tr:last-of-type td { border-bottom: none; }
+  .models-table input[type="text"] {
+    font-family: var(--font-body); font-size: 13.5px; font-weight: 600; color: var(--model-color, var(--ink));
+    background: var(--surface-2); border: 1px solid var(--line); border-radius: 6px; padding: 7px 9px; width: 100%; min-width: 140px;
+  }
+  .models-table input[type="number"] {
+    font-family: var(--font-mono); font-variant-numeric: tabular-nums; font-size: 13.5px; color: var(--ink);
+    background: var(--surface-2); border: 1px solid var(--line); border-radius: 6px; padding: 7px 9px; width: 110px;
+  }
+  .models-table select.deployment-input {
+    font-family: var(--font-body); font-size: 12.5px; color: var(--ink);
+    background: var(--surface-2); border: 1px solid var(--line); border-radius: 6px; padding: 7px 9px; min-width: 150px;
+  }
+  .models-table select.deployment-input:focus-visible { outline: 2px solid var(--accent-mini); outline-offset: 1px; }
+  .deploy-warning {
+    display: inline-block; font-family: var(--font-mono); font-size: 11px; font-weight: 600;
+    color: var(--neg); background: var(--neg-soft); border-radius: 999px; padding: 3px 9px; white-space: nowrap;
+  }
+  .deploy-ok { color: var(--ink-muted); }
+  .models-table input:focus-visible { outline: 2px solid var(--accent-mini); outline-offset: 1px; }
+  .swatch { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 8px; vertical-align: middle; }
+  .baseline-radio { display: flex; align-items: center; gap: 6px; justify-content: center; }
+  .baseline-radio input { width: 15px; height: 15px; accent-color: var(--accent-mini); }
+  button.remove-model {
+    font-family: var(--font-mono); font-size: 11.5px; color: var(--neg); background: var(--neg-soft);
+    border: 1px solid transparent; border-radius: 6px; padding: 6px 10px; cursor: pointer;
+  }
+  button.remove-model:disabled { opacity: .35; cursor: not-allowed; }
+  button.remove-model:focus-visible { outline: 2px solid var(--neg); outline-offset: 1px; }
+  .models-footer { display: flex; justify-content: space-between; align-items: center; margin-top: 14px; gap: 10px; flex-wrap: wrap; }
+  .models-hint { font-size: 12px; color: var(--ink-muted); }
+
+  /* Ledger cards */
+  .ledger-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 16px; }
+  .ledger { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 20px 22px; border-top: 3px solid var(--model-color); }
+  .ledger-head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; margin-bottom: 4px; }
+  .ledger-name { font-family: var(--font-display); font-weight: 600; font-size: 16px; color: var(--model-color); }
+  .ledger-tag {
+    font-family: var(--font-mono); font-size: 10.5px; text-transform: uppercase; letter-spacing: .05em;
+    color: var(--ink-muted); background: var(--surface-2); border: 1px solid var(--line); border-radius: 999px; padding: 2px 8px; white-space: nowrap;
+  }
+  .ledger-tag.baseline { color: var(--ink); border-color: var(--line-strong); }
+  .ledger-row { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; padding: 9px 0; border-bottom: 1px solid var(--line); font-size: 13.5px; }
+  .ledger-row:last-child { border-bottom: none; }
+  .ledger-row .k { color: var(--ink-muted); }
+  .ledger-row .v { font-family: var(--font-mono); font-variant-numeric: tabular-nums; font-weight: 600; text-align: right; }
+
+  /* capacity bars */
+  .bars { display: flex; flex-direction: column; gap: 10px; margin-top: 4px; }
+  .bar-row { display: grid; grid-template-columns: 130px 1fr 96px; align-items: center; gap: 10px; }
+  .bar-label { font-size: 12.5px; color: var(--ink-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .bar-track { height: 10px; background: var(--surface-2); border-radius: 5px; overflow: hidden; border: 1px solid var(--line); }
+  .bar-fill { height: 100%; border-radius: 5px; transition: width .25s ease; background: var(--model-color); }
+  .bar-value { font-family: var(--font-mono); font-variant-numeric: tabular-nums; font-size: 12.5px; text-align: right; }
+
+  /* generic data table (math trace) */
+  .table-scroll { overflow-x: auto; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); }
+  table.data { border-collapse: collapse; width: 100%; min-width: 640px; font-size: 13px; }
+  table.data thead th {
+    text-align: right; font-family: var(--font-mono); font-size: 10.5px; letter-spacing: .05em; text-transform: uppercase;
+    color: var(--model-color, var(--ink-muted)); font-weight: 600; padding: 10px 14px; border-bottom: 1px solid var(--line-strong);
+    background: var(--surface-2); white-space: nowrap;
+  }
+  table.data thead th:first-child { text-align: left; color: var(--ink-muted); font-weight: 500; }
+  table.data thead th .baseline-mark { display: block; font-weight: 400; font-size: 9.5px; color: var(--ink-muted); text-transform: none; letter-spacing: 0; }
+  table.data tbody td { padding: 8px 14px; border-bottom: 1px solid var(--line); text-align: right; vertical-align: middle; }
+  table.data tbody tr:last-child td { border-bottom: none; }
+  table.data tbody td:first-child { text-align: left; }
+  .row-label { font-size: 13px; }
+  .row-sub { display: block; font-family: var(--font-mono); font-size: 11px; color: var(--ink-muted); margin-top: 2px; }
+  td.mono, table.data tbody td.mono { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+
+  footer { color: var(--ink-muted); font-size: 12px; line-height: 1.7; border-top: 1px solid var(--line); padding-top: 20px; }
+
+  @media (prefers-reduced-motion: reduce) { .bar-fill { transition: none; } }
+</style>
+
+<div class="wrap">
+
+  <header>
+    <div class="eyebrow">PTU capacity model — live derivation</div>
+    <h1>Compare any models on the same PTU pool</h1>
+    <p class="thesis">
+      Set the shared PTU count and annual budget once, then add, rename, or remove models directly
+      from the table below. Every ledger and formula
+      <strong>recomputes from the model you pick as baseline</strong> — nothing about GPT-5.4 or mini
+      is hardcoded anymore.
+    </p>
+  </header>
+
+  <section aria-labelledby="assumptions-h">
+    <h2 id="assumptions-h">Shared assumptions</h2>
+    <p class="section-note">All models below draw on this same PTU reservation and budget — a fixed-capacity comparison, not a token-price comparison.</p>
+    <div class="card">
+      <div class="assumptions-grid">
+        <div class="field"><label for="in-budget">Annual budget ($)</label><input id="in-budget" type="number" value="162000" step="1000" min="0"></div>
+        <div class="field"><label for="in-ptu">PTUs reserved</label><input id="in-ptu" type="number" value="50" step="1" min="1"></div>
+        <div class="field"><label for="in-util">Utilization (%)</label><input id="in-util" type="number" value="70" step="1" min="1" max="100"></div>
+        <div class="field"><label for="in-req-in">Request input tokens</label><input id="in-req-in" type="number" value="1000" step="50" min="1"></div>
+        <div class="field"><label for="in-req-out">Request output tokens</label><input id="in-req-out" type="number" value="500" step="50" min="1"></div>
+      </div>
+    </div>
+  </section>
+
+  <section aria-labelledby="models-h">
+    <h2 id="models-h">Models</h2>
+    <p class="section-note">Pick one model as the baseline (the denominator for retention and yield). Add comparators from Microsoft's published Azure OpenAI PTU catalog, or as a blank custom row. Deployment (Regional vs. Global/Data Zone) sets each model's real PTU minimum and scale increment — the capacity cards below flag it if the shared PTU count you set doesn't clear a model's minimum.</p>
+    <div class="card">
+      <table class="models-table">
+        <thead>
+          <tr><th style="width:70px;">Baseline</th><th>Model name</th><th>TPM / PTU</th><th>Output ratio</th><th>Latency target</th><th>Deployment</th><th style="width:1%;"></th></tr>
+        </thead>
+        <tbody id="models-body"></tbody>
+      </table>
+      <div class="models-footer">
+        <span class="models-hint" id="models-hint"></span>
+        <select class="catalog-select" id="catalog-select" aria-label="Add a model from the Azure catalog">
+          <option value="" selected disabled>+ Add model from catalog…</option>
+        </select>
+      </div>
+    </div>
+    <div class="reset-row"><button class="reset" id="reset-btn" type="button">Reset to reported defaults</button></div>
+  </section>
+
+  <section aria-labelledby="capacity-h">
+    <h2 id="capacity-h">Reserved capacity, same $</h2>
+    <div class="ledger-grid" id="ledger-grid"></div>
+    <div class="card">
+      <div class="bars" id="bars"></div>
+    </div>
+  </section>
+
+  <section aria-labelledby="trace-h">
+    <h2 id="trace-h">The math, step by step</h2>
+    <p class="section-note">Same formulas as the report, run once per model with your current inputs — not a re-derivation, the actual arithmetic.</p>
+    <div class="table-scroll">
+      <table class="data" id="trace-table">
+        <thead><tr id="trace-head"></tr></thead>
+        <tbody id="trace-body"></tbody>
+      </table>
+    </div>
+  </section>
+
+  <footer>
+    PTU minimums/increments, output ratios, latency targets, and model prices are Microsoft-published
+    planning figures, not guaranteed throughput. Recheck the Azure quote, region, and model snapshot
+    before an annual commitment. Default rows preloaded from: <em>50-PTU Business Case: GPT-5.4 vs.
+    GPT-5.4 mini</em>, decision date July 14, 2026.
+  </footer>
+
+</div>
+
+<script>
+(function () {
+  const $ = (id) => document.getElementById(id);
+  const MIN_PER_YEAR = 525600;
+  const MODEL_COLORS = ['var(--accent-gpt)', 'var(--accent-mini)', 'var(--accent-3)', 'var(--accent-4)', 'var(--accent-5)', 'var(--accent-6)'];
+
+  const inputs = {
+    budget: $('in-budget'), ptu: $('in-ptu'), util: $('in-util'),
+    reqIn: $('in-req-in'), reqOut: $('in-req-out'),
+  };
+  const GLOBAL_DEFAULTS = { budget: 162000, ptu: 50, util: 70, reqIn: 1000, reqOut: 500 };
+
+  // TPM/PTU, output ratio, and latency target for every entry below are read directly off
+  // Microsoft's PTU sizing table (learn.microsoft.com/azure/foundry/openai/how-to/provisioned-
+  // throughput-sizing, fetched 2026-07-15) — nothing here is estimated.
+  // Global & Data Zone Provisioned minimum/increment is 15/5 PTUs for every model in this catalog
+  // (Microsoft's PTU sizing table). Regional Provisioned varies per model — regionalMin/regionalIncrement below.
+  const GDZ_MIN = 15;
+  const GDZ_INCREMENT = 5;
+  const CATALOG = [
+    { name: 'gpt-5.6-terra', tpmPerPtu: 2400, outputRatio: 6, latency: '99% > 70 TPS', regionalMin: 50, regionalIncrement: 50, group: 'Azure OpenAI — current' },
+    { name: 'gpt-5.6-sol', tpmPerPtu: 1200, outputRatio: 6, latency: '99% > 50 TPS', regionalMin: 50, regionalIncrement: 50, group: 'Azure OpenAI — current' },
+    { name: 'gpt-5.5', tpmPerPtu: 1200, outputRatio: 6, latency: '99% > 100 TPS', regionalMin: 50, regionalIncrement: 50, group: 'Azure OpenAI — current' },
+    { name: 'gpt-5.4', tpmPerPtu: 2400, outputRatio: 6, latency: '99% > 50 TPS', regionalMin: 50, regionalIncrement: 50, group: 'Azure OpenAI — current' },
+    { name: 'gpt-5.4-mini', tpmPerPtu: 7900, outputRatio: 6, latency: '99% > 100 TPS', regionalMin: 25, regionalIncrement: 25, group: 'Azure OpenAI — current' },
+    { name: 'gpt-5.3-codex', tpmPerPtu: 3400, outputRatio: 8, latency: '99% > 50 TPS', regionalMin: 50, regionalIncrement: 50, group: 'Azure OpenAI — current' },
+    { name: 'gpt-5.2', tpmPerPtu: 3400, outputRatio: 8, latency: '99% > 50 TPS', regionalMin: 50, regionalIncrement: 50, group: 'Azure OpenAI — current' },
+    { name: 'gpt-5.2-codex', tpmPerPtu: 3400, outputRatio: 8, latency: '99% > 50 TPS', regionalMin: 50, regionalIncrement: 50, group: 'Azure OpenAI — current' },
+    { name: 'gpt-5.1', tpmPerPtu: 4750, outputRatio: 8, latency: '99% > 50 TPS', regionalMin: 50, regionalIncrement: 50, group: 'Azure OpenAI — current' },
+    { name: 'gpt-5.1-codex', tpmPerPtu: 4750, outputRatio: 8, latency: '99% > 50 TPS', regionalMin: 50, regionalIncrement: 50, group: 'Azure OpenAI — current' },
+    { name: 'gpt-5', tpmPerPtu: 4750, outputRatio: 8, latency: '99% > 50 TPS', regionalMin: 50, regionalIncrement: 50, group: 'Azure OpenAI — current' },
+    { name: 'gpt-5-mini', tpmPerPtu: 23750, outputRatio: 8, latency: '99% > 80 TPS', regionalMin: 25, regionalIncrement: 25, group: 'Azure OpenAI — current' },
+    { name: 'gpt-4.1', tpmPerPtu: 3000, outputRatio: 4, latency: '99% > 80 TPS', regionalMin: 50, regionalIncrement: 50, group: 'Azure OpenAI — current' },
+    { name: 'gpt-4.1-mini', tpmPerPtu: 14900, outputRatio: 4, latency: '99% > 90 TPS', regionalMin: 25, regionalIncrement: 25, group: 'Azure OpenAI — current' },
+    { name: 'gpt-4.1-nano', tpmPerPtu: 59400, outputRatio: 4, latency: '99% > 100 TPS', regionalMin: 25, regionalIncrement: 25, group: 'Azure OpenAI — current' },
+    { name: 'o3', tpmPerPtu: 3000, outputRatio: 4, latency: '99% > 80 TPS', regionalMin: 50, regionalIncrement: 50, group: 'Azure OpenAI — current' },
+    { name: 'o4-mini', tpmPerPtu: 5400, outputRatio: 4, latency: '99% > 90 TPS', regionalMin: 25, regionalIncrement: 25, group: 'Azure OpenAI — current' },
+    { name: 'gpt-4o', tpmPerPtu: 2500, outputRatio: 4, latency: '99% > 25 TPS', regionalMin: 50, regionalIncrement: 50, group: 'Azure OpenAI — previous generation' },
+    { name: 'gpt-4o-mini', tpmPerPtu: 37000, outputRatio: 4, latency: '99% > 33 TPS', regionalMin: 25, regionalIncrement: 25, group: 'Azure OpenAI — previous generation' },
+    { name: 'o3-mini', tpmPerPtu: 2500, outputRatio: 4, latency: '99% > 66 TPS', regionalMin: 25, regionalIncrement: 25, group: 'Azure OpenAI — previous generation' },
+    { name: 'o1', tpmPerPtu: 230, outputRatio: 4, latency: '99% > 25 TPS', regionalMin: 25, regionalIncrement: 50, group: 'Azure OpenAI — previous generation' },
+  ];
+
+  let idSeq = 0;
+  let models = [];
+
+  function byName(name) { return CATALOG.find((e) => e.name === name); }
+
+  function modelFromEntry(id, entry, overrides) {
+    return Object.assign({
+      id, name: entry.name, tpmPerPtu: entry.tpmPerPtu, outputRatio: entry.outputRatio,
+      latency: entry.latency, regionalMin: entry.regionalMin, regionalIncrement: entry.regionalIncrement,
+      deploymentType: 'regional', isBaseline: false,
+    }, overrides || {});
+  }
+
+  // Preloaded on load: the two models the 50-PTU business case compares, plus GPT-4.1 / GPT-4.1
+  // mini (added on request) — all four sourced from CATALOG above, so they carry the same real
+  // TPM/PTU, output ratio, latency, regional PTU minimums, and (where published) GPQA Diamond
+  // figures as the catalog. Deployment type defaults to Regional, matching the original 50-PTU
+  // business case (which was framed around a Regional Provisioned reservation).
+  function freshDefaultModels() {
+    idSeq = 4;
+    return [
+      modelFromEntry('m0', byName('gpt-5.4'), { name: 'GPT-5.4', isBaseline: true }),
+      modelFromEntry('m1', byName('gpt-5.4-mini'), { name: 'GPT-5.4 mini' }),
+      modelFromEntry('m2', byName('gpt-4.1'), { name: 'GPT-4.1' }),
+      modelFromEntry('m3', byName('gpt-4.1-mini'), { name: 'GPT-4.1 mini' }),
+    ];
+  }
+
+  const fmtInt = (n) => Math.round(n).toLocaleString('en-US');
+  const fmtMoney = (n, d = 0) => '$' + n.toLocaleString('en-US', { maximumFractionDigits: d, minimumFractionDigits: d });
+  const fmtB = (n) => (n / 1e9).toFixed(3) + 'B';
+  const fmtX = (n) => n.toFixed(2) + '×';
+  const fmtPct = (n) => n.toFixed(1) + '%';
+
+  function readGlobals() {
+    return {
+      budget: parseFloat(inputs.budget.value) || 0,
+      ptu: parseFloat(inputs.ptu.value) || 0,
+      util: parseFloat(inputs.util.value) || 0,
+      reqIn: parseFloat(inputs.reqIn.value) || 0,
+      reqOut: parseFloat(inputs.reqOut.value) || 0,
+    };
+  }
+
+  function baselineModel() { return models.find((m) => m.isBaseline) || models[0]; }
+
+  function metricsFor(m, g) {
+    const tpm = m.tpmPerPtu * g.ptu;
+    const cap100 = tpm * MIN_PER_YEAR;
+    const capUtil = cap100 * (g.util / 100);
+    const costPerB = capUtil > 0 ? g.budget / (capUtil / 1e9) : 0;
+    const normTokPerReq = g.reqIn + m.outputRatio * g.reqOut;
+    const reqPerMinTheor = normTokPerReq > 0 ? tpm / normTokPerReq : 0;
+    const reqPerYear = reqPerMinTheor * (g.util / 100) * MIN_PER_YEAR;
+    const cost1k = reqPerYear > 0 ? (g.budget / reqPerYear) * 1000 : 0;
+    return { tpm, cap100, capUtil, costPerB, normTokPerReq, reqPerYear, cost1k };
+  }
+
+  function ratioVsBaseline(m, baseline) { return baseline.tpmPerPtu > 0 ? m.tpmPerPtu / baseline.tpmPerPtu : 0; }
+
+  // Global/Data Zone Provisioned is 15 PTU minimum / 5 PTU increment for every model in this
+  // catalog; Regional Provisioned varies per model (regionalMin/regionalIncrement).
+  function deploymentConstraint(m) {
+    if (m.deploymentType === 'global-dz') return { label: 'Global / Data Zone', min: GDZ_MIN, increment: GDZ_INCREMENT };
+    return { label: 'Regional', min: m.regionalMin || GDZ_MIN, increment: m.regionalIncrement || GDZ_INCREMENT };
+  }
+
+  // ---------- structural render (add/remove model) ----------
+
+  function renderModelsEditor() {
+    const body = $('models-body');
+    body.innerHTML = '';
+    models.forEach((m, i) => {
+      const tr = document.createElement('tr');
+      tr.dataset.id = m.id;
+      tr.innerHTML = `
+        <td><div class="baseline-radio"><input type="radio" name="baseline" ${m.isBaseline ? 'checked' : ''} aria-label="Use ${m.name} as baseline"></div></td>
+        <td><span class="swatch" style="background:${MODEL_COLORS[i % MODEL_COLORS.length]}"></span><input type="text" class="name-input" value="${m.name}" style="--model-color:${MODEL_COLORS[i % MODEL_COLORS.length]}"></td>
+        <td><input type="number" class="tpm-input" value="${m.tpmPerPtu}" step="10" min="1"></td>
+        <td><input type="number" class="ratio-input" value="${m.outputRatio}" step="1" min="1"></td>
+        <td><input type="text" class="latency-input" value="${m.latency || ''}" placeholder="e.g. 99% > 50 TPS"></td>
+        <td>
+          <select class="deployment-input">
+            <option value="regional" ${m.deploymentType !== 'global-dz' ? 'selected' : ''}>Regional</option>
+            <option value="global-dz" ${m.deploymentType === 'global-dz' ? 'selected' : ''}>Global / Data Zone</option>
+          </select>
+        </td>
+        <td><button class="remove-model" type="button" ${models.length <= 2 ? 'disabled' : ''} aria-label="Remove ${m.name}">Remove</button></td>
+      `;
+      body.appendChild(tr);
+      tr.querySelector('.baseline-radio input').addEventListener('change', () => {
+        models.forEach((mm) => (mm.isBaseline = mm.id === m.id));
+        renderAll();
+      });
+      tr.querySelector('.name-input').addEventListener('input', (e) => { m.name = e.target.value || m.name; recomputeDerived(); });
+      tr.querySelector('.tpm-input').addEventListener('input', (e) => { m.tpmPerPtu = parseFloat(e.target.value) || 0; recomputeDerived(); });
+      tr.querySelector('.ratio-input').addEventListener('input', (e) => { m.outputRatio = parseFloat(e.target.value) || 1; recomputeDerived(); });
+      tr.querySelector('.latency-input').addEventListener('input', (e) => { m.latency = e.target.value; recomputeDerived(); });
+      tr.querySelector('.deployment-input').addEventListener('change', (e) => { m.deploymentType = e.target.value; recomputeDerived(); });
+      tr.querySelector('.remove-model').addEventListener('click', () => {
+        if (models.length <= 2) return;
+        models = models.filter((mm) => mm.id !== m.id);
+        if (!models.some((mm) => mm.isBaseline)) models[0].isBaseline = true;
+        renderAll();
+      });
+    });
+    $('models-hint').textContent = `${models.length} model${models.length === 1 ? '' : 's'} on this PTU pool.`;
+  }
+
+  function renderLedgerShells() {
+    const grid = $('ledger-grid');
+    grid.innerHTML = '';
+    models.forEach((m, i) => {
+      const color = MODEL_COLORS[i % MODEL_COLORS.length];
+      const card = document.createElement('div');
+      card.className = 'ledger';
+      card.style.setProperty('--model-color', color);
+      card.dataset.id = m.id;
+      card.innerHTML = `
+        <div class="ledger-head">
+          <span class="ledger-name" data-role="name">${m.name}</span>
+          <span class="ledger-tag" data-role="tag"></span>
+        </div>
+        <div class="ledger-row"><span class="k">Latency target</span><span class="v" data-role="latency">—</span></div>
+        <div class="ledger-row"><span class="k">Deployment</span><span class="v" data-role="deployment">—</span></div>
+        <div class="ledger-row"><span class="k">TPM at reserved PTUs</span><span class="v" data-role="tpm">—</span></div>
+        <div class="ledger-row"><span class="k">Annual capacity @ 100%</span><span class="v" data-role="cap100">—</span></div>
+        <div class="ledger-row"><span class="k">Annual capacity @ util.</span><span class="v" data-role="caputil">—</span></div>
+        <div class="ledger-row"><span class="k">Cost / 1B normalized tokens</span><span class="v" data-role="costb">—</span></div>
+        <div class="ledger-row"><span class="k">Requests / year @ util.</span><span class="v" data-role="reqyear">—</span></div>
+        <div class="ledger-row"><span class="k">Cost / 1,000 requests</span><span class="v" data-role="cost1k">—</span></div>
+      `;
+      grid.appendChild(card);
+    });
+  }
+
+  function renderBarShells() {
+    const wrap = $('bars');
+    wrap.innerHTML = '';
+    models.forEach((m, i) => {
+      const color = MODEL_COLORS[i % MODEL_COLORS.length];
+      const row = document.createElement('div');
+      row.className = 'bar-row';
+      row.dataset.id = m.id;
+      row.innerHTML = `
+        <span class="bar-label" data-role="label">${m.name}</span>
+        <div class="bar-track"><div class="bar-fill" data-role="fill" style="width:0%;--model-color:${color}"></div></div>
+        <span class="bar-value" data-role="value">—</span>
+      `;
+      wrap.appendChild(row);
+    });
+  }
+
+  const TRACE_ROWS = [
+    { role: 'tpm', label: 'TPM at reserved PTUs', formula: 'tpm/ptu × ptu_count' },
+    { role: 'cap100', label: 'Annual capacity @ 100% utilization', formula: 'tpm × 525,600 min/yr' },
+    { role: 'caputil', label: 'Annual capacity @ stated utilization', formula: 'capacity_100% × util%' },
+    { role: 'costb', label: 'Cost per 1B normalized tokens', formula: 'budget ÷ (capacity_util ÷ 1e9)' },
+    { role: 'normreq', label: 'Normalized tokens / request', formula: 'input_tok + output_ratio × output_tok' },
+    { role: 'reqyear', label: 'Requests / year @ utilization', formula: '(tpm × util% ÷ norm_tok/req) × 525,600' },
+    { role: 'cost1k', label: 'Cost / 1,000 requests', formula: 'budget ÷ requests_per_year × 1,000' },
+    { role: 'ratio', label: 'Capacity ratio vs. baseline', formula: 'tpm_per_ptu ÷ baseline.tpm_per_ptu' },
+  ];
+
+  function renderTraceShell() {
+    const head = $('trace-head');
+    head.innerHTML = '<th></th>';
+    models.forEach((m, i) => {
+      const th = document.createElement('th');
+      th.dataset.id = m.id;
+      th.style.setProperty('--model-color', MODEL_COLORS[i % MODEL_COLORS.length]);
+      th.innerHTML = `<span data-role="name">${m.name}</span>${m.isBaseline ? '<span class="baseline-mark">baseline</span>' : ''}`;
+      head.appendChild(th);
+    });
+    const body = $('trace-body');
+    body.innerHTML = '';
+    TRACE_ROWS.forEach((r) => {
+      const tr = document.createElement('tr');
+      tr.dataset.role = r.role;
+      let cells = `<td><span class="row-label">${r.label}</span><span class="row-sub">${r.formula}</span></td>`;
+      models.forEach((m) => { cells += `<td class="mono" data-id="${m.id}">—</td>`; });
+      tr.innerHTML = cells;
+      body.appendChild(tr);
+    });
+  }
+
+  function renderAll() {
+    renderModelsEditor();
+    renderLedgerShells();
+    renderBarShells();
+    renderTraceShell();
+    recomputeDerived();
+  }
+
+  // ---------- value-only recompute (every keystroke) ----------
+
+  function recomputeDerived() {
+    const g = readGlobals();
+    const baseline = baselineModel();
+    if (!baseline) return;
+    const perModel = {};
+    models.forEach((m) => { perModel[m.id] = metricsFor(m, g); });
+    const maxCap = Math.max(...models.map((m) => perModel[m.id].capUtil), 1);
+
+    // ledger cards + bars
+    models.forEach((m) => {
+      const met = perModel[m.id];
+      const card = document.querySelector(`.ledger[data-id="${m.id}"]`);
+      if (card) {
+        card.querySelector('[data-role="name"]').textContent = m.name;
+        const tag = card.querySelector('[data-role="tag"]');
+        if (m.isBaseline) { tag.textContent = 'baseline'; tag.classList.add('baseline'); }
+        else { tag.textContent = fmtX(ratioVsBaseline(m, baseline)) + ' vs baseline'; tag.classList.remove('baseline'); }
+        card.querySelector('[data-role="latency"]').textContent = m.latency || '—';
+        const dc = deploymentConstraint(m);
+        const dcOk = g.ptu >= dc.min && (g.ptu - dc.min) % dc.increment === 0;
+        const nextValid = dcOk ? g.ptu : dc.min + Math.ceil(Math.max(0, g.ptu - dc.min) / dc.increment) * dc.increment;
+        card.querySelector('[data-role="deployment"]').innerHTML = dcOk
+          ? `${dc.label} <span class="deploy-ok">(min ${fmtInt(dc.min)}, step ${fmtInt(dc.increment)})</span>`
+          : `${dc.label} <span class="deploy-warning">⚠ needs ${fmtInt(nextValid)} PTU</span>`;
+        card.querySelector('[data-role="tpm"]').textContent = fmtInt(met.tpm) + ' TPM';
+        card.querySelector('[data-role="cap100"]').textContent = fmtB(met.cap100) + ' tok';
+        card.querySelector('[data-role="caputil"]').textContent = fmtB(met.capUtil) + ' tok';
+        card.querySelector('[data-role="costb"]').textContent = fmtMoney(met.costPerB);
+        card.querySelector('[data-role="reqyear"]').textContent = fmtInt(met.reqPerYear);
+        card.querySelector('[data-role="cost1k"]').textContent = fmtMoney(met.cost1k, 2);
+      }
+      const bar = document.querySelector(`.bar-row[data-id="${m.id}"]`);
+      if (bar) {
+        bar.querySelector('[data-role="label"]').textContent = m.name;
+        bar.querySelector('[data-role="fill"]').style.width = (met.capUtil / maxCap * 100).toFixed(1) + '%';
+        bar.querySelector('[data-role="value"]').textContent = fmtB(met.capUtil);
+      }
+    });
+
+    // trace table
+    document.querySelectorAll('#trace-head th[data-id]').forEach((th) => {
+      const m = models.find((mm) => mm.id === th.dataset.id);
+      if (m) th.querySelector('[data-role="name"]').textContent = m.name;
+    });
+    const setRow = (role, fn) => {
+      const tr = document.querySelector(`#trace-body tr[data-role="${role}"]`);
+      if (!tr) return;
+      models.forEach((m) => {
+        const cell = tr.querySelector(`td[data-id="${m.id}"]`);
+        if (cell) cell.textContent = fn(m, perModel[m.id]);
+      });
+    };
+    setRow('tpm', (m, met) => fmtInt(met.tpm));
+    setRow('cap100', (m, met) => fmtB(met.cap100));
+    setRow('caputil', (m, met) => fmtB(met.capUtil));
+    setRow('costb', (m, met) => fmtMoney(met.costPerB));
+    setRow('normreq', (m, met) => fmtInt(met.normTokPerReq));
+    setRow('reqyear', (m, met) => fmtInt(met.reqPerYear));
+    setRow('cost1k', (m, met) => fmtMoney(met.cost1k, 2));
+    setRow('ratio', (m) => (m.isBaseline ? '—' : fmtX(ratioVsBaseline(m, baseline))));
+  }
+
+  function addModelFromCatalog(entry) {
+    const id = 'm' + (idSeq++);
+    models.push(modelFromEntry(id, entry));
+    renderAll();
+  }
+
+  function addCustomModel() {
+    const baseline = baselineModel();
+    const id = 'm' + (idSeq++);
+    models.push({
+      id, name: 'Model ' + (models.length + 1), tpmPerPtu: baseline.tpmPerPtu, outputRatio: baseline.outputRatio,
+      latency: baseline.latency, regionalMin: baseline.regionalMin, regionalIncrement: baseline.regionalIncrement,
+      deploymentType: baseline.deploymentType, isBaseline: false,
+    });
+    renderAll();
+  }
+
+  function populateCatalogSelect() {
+    const sel = $('catalog-select');
+    sel.innerHTML = '<option value="" selected disabled>+ Add model from catalog…</option>';
+    const groups = {};
+    CATALOG.forEach((entry, i) => {
+      if (!groups[entry.group]) {
+        groups[entry.group] = document.createElement('optgroup');
+        groups[entry.group].label = entry.group;
+        sel.appendChild(groups[entry.group]);
+      }
+      const opt = document.createElement('option');
+      opt.value = String(i);
+      opt.textContent = `${entry.name}  (${fmtInt(entry.tpmPerPtu)} TPM/PTU)`;
+      groups[entry.group].appendChild(opt);
+    });
+    const customOpt = document.createElement('option');
+    customOpt.value = 'custom';
+    customOpt.textContent = 'Custom / blank model…';
+    sel.appendChild(customOpt);
+  }
+
+  Object.values(inputs).forEach((inp) => inp.addEventListener('input', recomputeDerived));
+  $('catalog-select').addEventListener('change', (e) => {
+    const val = e.target.value;
+    if (val === '') return;
+    if (val === 'custom') addCustomModel();
+    else addModelFromCatalog(CATALOG[parseInt(val, 10)]);
+    e.target.value = '';
+  });
+  $('reset-btn').addEventListener('click', () => {
+    inputs.budget.value = GLOBAL_DEFAULTS.budget;
+    inputs.ptu.value = GLOBAL_DEFAULTS.ptu;
+    inputs.util.value = GLOBAL_DEFAULTS.util;
+    inputs.reqIn.value = GLOBAL_DEFAULTS.reqIn;
+    inputs.reqOut.value = GLOBAL_DEFAULTS.reqOut;
+    models = freshDefaultModels();
+    renderAll();
+  });
+
+  populateCatalogSelect();
+  models = freshDefaultModels();
+  renderAll();
+})();
+</script>
